@@ -1,0 +1,15 @@
+:root {
+  --bg-base: #f5efe6;
+  --bg-wash: #eff7f5;
+  --surface-card: rgba(255, 255, 255, 0.82);
+  --surface-strong: rgba(255, 249, 241, 0.9);
+  --border-soft: rgba(18, 68, 72, 0.08);
+  --text-main: #17333d;
+  --text-soft: #4b6772;
+  --text-muted: #6c8790;
+  --accent-strong: #15717a;
+  --accent-warm: #e58d39;
+  --shadow-soft: 0 24px 60px rgba(13, 45, 57, 0.1);
+  --font-sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
+}

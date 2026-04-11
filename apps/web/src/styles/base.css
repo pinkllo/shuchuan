@@ -1,0 +1,233 @@
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--text-main);
+  background:
+    radial-gradient(circle at top right, rgba(229, 141, 57, 0.16), transparent 25%),
+    radial-gradient(circle at left bottom, rgba(21, 113, 122, 0.14), transparent 30%),
+    linear-gradient(180deg, var(--bg-base), var(--bg-wash));
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+}
+
+/* ── Surface Card ── */
+.surface-card {
+  padding: 24px;
+  border-radius: 28px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-soft);
+  animation: fade-rise 360ms ease;
+}
+
+/* ── Grid Layouts ── */
+.page-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.metric-grid,
+.two-col,
+.three-col,
+.flow-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.metric-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.two-col {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.three-col,
+.flow-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* ── Card Head ── */
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.card-head h3 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.card-head p,
+.flow-card p,
+.flow-card small,
+.note-list,
+.step-list {
+  margin: 0;
+}
+
+/* ── Flow Card ── */
+.flow-card {
+  padding: 20px;
+  border-radius: 22px;
+  background: var(--surface-strong);
+  border: 1px solid rgba(18, 68, 72, 0.08);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.flow-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(14, 53, 65, 0.1);
+}
+
+.flow-card strong {
+  display: block;
+  margin: 12px 0 10px;
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.flow-card small {
+  display: block;
+  line-height: 1.7;
+  color: var(--text-soft);
+}
+
+/* ── Lists ── */
+.note-list,
+.step-list {
+  padding-left: 18px;
+  color: var(--text-soft);
+}
+
+.note-list li,
+.step-list li {
+  line-height: 1.8;
+}
+
+/* ── Quick Actions ── */
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.quick-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 20px 22px;
+  border: 1px solid var(--border-soft);
+  border-radius: 20px;
+  background: var(--surface-strong);
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+  text-align: left;
+  font-family: inherit;
+}
+
+.quick-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 32px rgba(14, 53, 65, 0.12);
+}
+
+.quick-btn strong {
+  font-size: 16px;
+  color: var(--text-main);
+}
+
+.quick-btn span {
+  font-size: 13px;
+  color: var(--text-soft);
+  line-height: 1.5;
+}
+
+.quick-btn--jade:hover { background: rgba(223, 242, 232, 0.8); }
+.quick-btn--amber:hover { background: rgba(255, 227, 188, 0.6); }
+.quick-btn--slate:hover { background: rgba(221, 238, 244, 0.7); }
+.quick-btn--muted:hover { background: rgba(240, 240, 240, 0.8); }
+
+/* ── Element Plus Overrides ── */
+.el-table {
+  --el-table-header-bg-color: rgba(239, 247, 245, 0.9);
+  --el-table-row-hover-bg-color: rgba(239, 247, 245, 0.72);
+  --el-table-border-color: rgba(18, 68, 72, 0.08);
+}
+
+.el-button--primary {
+  --el-button-bg-color: #15717a;
+  --el-button-border-color: #15717a;
+  --el-button-hover-bg-color: #125b63;
+  --el-button-hover-border-color: #125b63;
+}
+
+.el-dialog {
+  border-radius: 24px !important;
+}
+
+.el-drawer {
+  border-radius: 24px 0 0 24px !important;
+}
+
+.el-descriptions {
+  --el-descriptions-item-bordered-label-background: rgba(239, 247, 245, 0.6);
+}
+
+/* ── Animations ── */
+@keyframes fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Responsive ── */
+@media (max-width: 1200px) {
+  .metric-grid,
+  .three-col,
+  .flow-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 780px) {
+  .metric-grid,
+  .two-col,
+  .three-col,
+  .flow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .surface-card {
+    padding: 18px;
+    border-radius: 24px;
+  }
+
+  .card-head {
+    flex-direction: column;
+  }
+
+  .quick-actions {
+    grid-template-columns: 1fr;
+  }
+}
