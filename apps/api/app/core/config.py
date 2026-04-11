@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data-platform.db"
     secret_key: str = "dev-secret-key"
     access_token_expire_minutes: int = 60
+    upload_root: str = "uploads"
 
 
 settings = Settings()
