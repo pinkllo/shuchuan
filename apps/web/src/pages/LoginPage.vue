@@ -1,100 +1,146 @@
 <script setup lang="ts">
+import { computed, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { useRouter } from "vue-router";
-import { roleLabels, useSessionStore, type UserRole } from "@/stores/session";
+import { useRoute, useRouter } from "vue-router";
+
+import { login } from "@/api/auth";
+import { getErrorMessage } from "@/api/http";
+import { useSessionStore } from "@/stores/session";
 
 const router = useRouter();
+const route = useRoute();
 const sessionStore = useSessionStore();
 
-const roles: UserRole[] = ["provider", "aggregator", "consumer"];
+const form = reactive({
+  username: "",
+  password: ""
+});
+const loading = ref(false);
 
-function enterPlatform(role: UserRole) {
-  sessionStore.login(role);
-  ElMessage.success(`已进入前端原型：${roleLabels[role]}`);
-  router.push({ name: "dashboard" });
+const sessionExpired = computed(() => route.query.reason === "session-expired");
+
+async function handleSubmit() {
+  loading.value = true;
+  try {
+    const payload = await login(form);
+    sessionStore.setSession(payload);
+    ElMessage.success("登录成功");
+    const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "/dashboard";
+    await router.push(redirect);
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  } finally {
+    loading.value = false;
+  }
 }
 </script>
 
 <template>
-  <div class="login-page">
-    <div class="login-container">
-      <header class="login-header">
+  <div class="auth-page">
+    <section class="auth-card">
+      <header class="auth-header">
+        <p class="auth-kicker">Data Flow Platform</p>
         <h1>数传协同平台</h1>
-        <p>请选择您的角色进入系统</p>
+        <p>使用真实账号登录，进入目录发布、需求协同和交付链路。</p>
       </header>
 
-      <div class="login-grid">
-        <article v-for="role in roles" :key="role" class="login-role">
-          <strong>{{ roleLabels[role] }}</strong>
-          <el-button type="primary" @click="enterPlatform(role)">
-            进入系统
-          </el-button>
-        </article>
-      </div>
-    </div>
+      <el-alert
+        v-if="sessionExpired"
+        title="会话已失效，请重新登录。"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+
+      <el-form :model="form" label-position="top" class="auth-form" @submit.prevent="handleSubmit">
+        <el-form-item label="用户名">
+          <el-input v-model="form.username" placeholder="请输入用户名" autocomplete="username" />
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input
+            v-model="form.password"
+            type="password"
+            placeholder="请输入密码"
+            show-password
+            autocomplete="current-password"
+            @keyup.enter="handleSubmit"
+          />
+        </el-form-item>
+        <el-button type="primary" :loading="loading" class="auth-submit" @click="handleSubmit">
+          登录系统
+        </el-button>
+      </el-form>
+
+      <footer class="auth-footer">
+        <span>还没有账号？</span>
+        <router-link to="/register">提交注册申请</router-link>
+      </footer>
+    </section>
   </div>
 </template>
 
 <style scoped>
-.login-page {
+.auth-page {
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #f7f9fa;
+  display: grid;
+  place-items: center;
   padding: 24px;
 }
 
-.login-container {
-  width: 100%;
-  max-width: 480px;
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 40px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
-}
-
-.login-header {
-  text-align: center;
-  margin-bottom: 40px;
-}
-
-.login-header h1 {
-  margin: 0 0 12px;
-  font-size: 28px;
-  color: #1a1a1a;
-  letter-spacing: 0.5px;
-}
-
-.login-header p {
-  margin: 0;
-  color: #666;
-  font-size: 15px;
-}
-
-.login-grid {
+.auth-card {
+  width: min(480px, 100%);
   display: grid;
-  gap: 16px;
+  gap: 20px;
+  padding: 32px;
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-soft);
 }
 
-.login-role {
+.auth-header {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-kicker {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+.auth-header h1,
+.auth-header p,
+.auth-footer {
+  margin: 0;
+}
+
+.auth-header h1 {
+  font-size: 30px;
+  color: var(--text-main);
+}
+
+.auth-header p {
+  color: var(--text-soft);
+  line-height: 1.7;
+}
+
+.auth-form {
+  display: grid;
+  gap: 6px;
+}
+
+.auth-submit {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.auth-footer {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
-  border-radius: 12px;
-  background: #fdfdfd;
-  border: 1px solid #eaeaea;
-  transition: all 0.2s;
-}
-
-.login-role:hover {
-  border-color: #dcdfe6;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-}
-
-.login-role strong {
-  font-size: 16px;
-  color: #333;
+  gap: 8px;
+  justify-content: center;
+  color: var(--text-soft);
 }
 </style>

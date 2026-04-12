@@ -88,6 +88,59 @@ def test_provider_can_only_upload_after_approval(authenticated_client) -> None:
     assert upload_response.json()["file_path"].startswith("uploads/raw/")
 
 
+def test_requester_can_list_uploaded_assets_for_owned_demand(authenticated_client) -> None:
+    provider_client = authenticated_client("provider")
+    owner_client = authenticated_client("aggregator")
+    other_client = authenticated_client("aggregator")
+
+    create_catalog_response = provider_client.post(
+        "/api/catalogs",
+        json={
+            "name": "资产查询目录",
+            "data_type": "text",
+            "granularity": "项目/摘要",
+            "version": "v1",
+            "fields_description": "项目名、摘要",
+            "scale_description": "3200 条",
+            "sensitivity_level": "internal",
+            "description": "资产查询测试",
+        },
+    )
+    catalog_id = create_catalog_response.json()["id"]
+    provider_client.post(f"/api/catalogs/{catalog_id}/publish")
+
+    create_demand_response = owner_client.post(
+        "/api/demands",
+        json={
+            "catalog_id": catalog_id,
+            "title": "资产查询需求",
+            "purpose": "为任务创建选择输入资产",
+            "delivery_plan": "2026-05-31",
+        },
+    )
+    demand_id = create_demand_response.json()["id"]
+
+    provider_client.post(
+        f"/api/demands/{demand_id}/approve",
+        json={"review_note": "通过"},
+    )
+    provider_client.post(
+        f"/api/demands/{demand_id}/assets",
+        files={"file": ("sample.jsonl", BytesIO(b'{"ok": true}'), "application/json")},
+    )
+
+    owner_response = owner_client.get(f"/api/demands/{demand_id}/assets")
+    assert owner_response.status_code == 200
+    assert owner_response.json()[0]["demand_id"] == demand_id
+
+    provider_response = provider_client.get(f"/api/demands/{demand_id}/assets")
+    assert provider_response.status_code == 200
+    assert provider_response.json()[0]["file_name"] == "sample.jsonl"
+
+    forbidden_response = other_client.get(f"/api/demands/{demand_id}/assets")
+    assert forbidden_response.status_code == 403
+
+
 def test_demands_list_is_filtered_by_role(authenticated_client) -> None:
     provider_client = authenticated_client("provider")
     owner_client = authenticated_client("aggregator")

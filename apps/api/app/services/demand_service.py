@@ -43,6 +43,20 @@ def list_demands_for_user(db: Session, *, user: User) -> list[Demand]:
     return query.order_by(Demand.id.desc()).all()
 
 
+def list_assets_for_user(db: Session, *, demand_id: int, user: User) -> list[UploadedAsset]:
+    demand = db.get(Demand, demand_id)
+    if demand is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="需求不存在")
+    if not _can_read_assets(user=user, demand=demand):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权限")
+    return (
+        db.query(UploadedAsset)
+        .filter(UploadedAsset.demand_id == demand_id)
+        .order_by(UploadedAsset.id.desc())
+        .all()
+    )
+
+
 def approve_demand(db: Session, *, demand_id: int, review_note: str, provider_id: int) -> Demand:
     demand = _owned_demand(db, demand_id, provider_id)
     if demand.status != DemandStatus.PENDING_APPROVAL:
@@ -97,3 +111,11 @@ def _owned_demand(db: Session, demand_id: int, provider_id: int) -> Demand:
     if demand.provider_id != provider_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权限")
     return demand
+
+
+def _can_read_assets(*, user: User, demand: Demand) -> bool:
+    if user.role == UserRole.PROVIDER:
+        return demand.provider_id == user.id
+    if user.role == UserRole.AGGREGATOR:
+        return demand.requester_id == user.id
+    return False

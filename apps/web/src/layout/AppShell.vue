@@ -1,42 +1,47 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { navItems } from '@/config/navigation'
-import { useSessionStore, roleLabels } from '@/stores/session'
-import { usePermission } from '@/composables/usePermission'
+import { computed } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { ElMessage } from "element-plus";
 
-const route = useRoute()
-const router = useRouter()
-const sessionStore = useSessionStore()
-const { role } = usePermission()
+import { filterNavItems } from "@/config/navigation";
+import { useSessionStore } from "@/stores/session";
+import { roleLabels } from "@/types/auth";
 
-const currentNav = computed(() =>
-  navItems.find((item) => item.name === route.name) ?? navItems[0]
-)
+const route = useRoute();
+const router = useRouter();
+const sessionStore = useSessionStore();
+
+const visibleNavItems = computed(() => filterNavItems(sessionStore.role));
+
+const currentNav = computed(() => {
+  const routeName = typeof route.name === "string" ? route.name : "";
+  return visibleNavItems.value.find((item) => item.name === routeName) ?? visibleNavItems.value[0] ?? null;
+});
 
 const roleColor = computed(() => {
   const map: Record<string, string> = {
-    provider: '#0f5860',
-    aggregator: '#5a3e1b',
-    consumer: '#1b4d8f'
-  }
-  return map[sessionStore.role] ?? '#0f5860'
-})
+    admin: "#5d2e8c",
+    provider: "#0f5860",
+    aggregator: "#8f4c16",
+    consumer: "#1b4d8f"
+  };
+  return map[sessionStore.role ?? "provider"] ?? "#0f5860";
+});
 
 const roleBg = computed(() => {
   const map: Record<string, string> = {
-    provider: 'rgba(24, 119, 123, 0.12)',
-    aggregator: 'rgba(200, 140, 60, 0.14)',
-    consumer: 'rgba(50, 100, 180, 0.12)'
-  }
-  return map[sessionStore.role] ?? 'rgba(24, 119, 123, 0.12)'
-})
+    admin: "rgba(93, 46, 140, 0.14)",
+    provider: "rgba(24, 119, 123, 0.12)",
+    aggregator: "rgba(200, 140, 60, 0.14)",
+    consumer: "rgba(50, 100, 180, 0.12)"
+  };
+  return map[sessionStore.role ?? "provider"] ?? "rgba(24, 119, 123, 0.12)";
+});
 
-function handleLogout() {
-  sessionStore.logout()
-  ElMessage.success('已退出')
-  router.push({ name: 'login' })
+async function handleLogout() {
+  sessionStore.clearSession();
+  ElMessage.success("已退出登录");
+  await router.push({ name: "login" });
 }
 </script>
 
@@ -45,11 +50,12 @@ function handleLogout() {
     <header class="shell__top-nav">
       <div class="shell__brand">
         <h1>数传协同平台</h1>
+        <p>真实鉴权、真实链路、显式失败</p>
       </div>
 
       <nav class="shell__nav">
         <router-link
-          v-for="item in navItems"
+          v-for="item in visibleNavItems"
           :key="item.name"
           :to="item.path"
           class="shell__nav-item"
@@ -65,17 +71,21 @@ function handleLogout() {
           class="shell__badge"
           :style="{ background: roleBg, color: roleColor }"
         >
-          {{ roleLabels[sessionStore.role] }}
+          {{ sessionStore.role ? roleLabels[sessionStore.role] : "未登录" }}
         </span>
+        <div class="shell__user-meta">
+          <strong>{{ sessionStore.displayName || sessionStore.user?.username }}</strong>
+          <small>{{ sessionStore.user?.email ?? sessionStore.user?.username }}</small>
+        </div>
         <el-button link type="primary" @click="handleLogout">退出</el-button>
       </div>
     </header>
 
     <div class="shell__main">
       <header class="shell__page-header">
-        <h2>{{ String(route.meta.title ?? currentNav.label) }}</h2>
+        <h2>{{ String(route.meta.title ?? currentNav?.label ?? "平台页面") }}</h2>
         <p class="shell__summary">
-          {{ String(route.meta.summary ?? currentNav.hint) }}
+          {{ String(route.meta.summary ?? currentNav?.hint ?? "基于角色权限访问当前页面。") }}
         </p>
       </header>
 
@@ -111,6 +121,12 @@ function handleLogout() {
   font-weight: 600;
   color: #1a1a1a;
   letter-spacing: 0.5px;
+}
+
+.shell__brand p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .shell__nav {
@@ -161,6 +177,22 @@ function handleLogout() {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.shell__user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shell__user-meta strong {
+  font-size: 14px;
+  color: #111827;
+}
+
+.shell__user-meta small {
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .shell__badge {
