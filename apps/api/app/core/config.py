@@ -10,6 +10,14 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-key"
     access_token_expire_minutes: int = 60
     upload_root: str = "uploads"
+    frontend_origins: str = ",".join(
+        [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:4173",
+            "http://127.0.0.1:4173",
+        ]
+    )
 
 
 settings = Settings()
