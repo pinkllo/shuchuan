@@ -190,6 +190,26 @@ def test_admin_can_list_users_and_disable_then_enable_user(client, db_session) -
     assert enabled_login.status_code == 200
 
 
+def test_admin_cannot_disable_self(client, db_session) -> None:
+    from app.db.models.user import User
+
+    _create_admin(db_session)
+
+    token = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "Admin123!"},
+    ).json()["access_token"]
+    admin = db_session.query(User).filter(User.username == "admin").one()
+
+    disable_response = client.post(
+        f"/api/admin/users/{admin.id}/disable",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert disable_response.status_code == 400
+    assert disable_response.json()["detail"] == "不能停用当前管理员账号"
+
+
 def test_bootstrap_admin_creates_active_admin_user() -> None:
     db_path, database_url = _bootstrap_database_url()
     command = [

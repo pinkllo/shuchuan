@@ -158,6 +158,11 @@ def reject_application(
 
 
 def disable_user(db: Session, user_id: int, admin_id: int) -> User:
+    if user_id == admin_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="不能停用当前管理员账号",
+        )
     return _set_user_status(db, user_id, UserStatus.DISABLED, admin_id, "user.disabled")
 
 
