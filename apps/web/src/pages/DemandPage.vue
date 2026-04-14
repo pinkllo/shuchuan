@@ -8,6 +8,9 @@ import ItemCard from "@/components/ItemCard.vue";
 import DetailPanel from "@/components/DetailPanel.vue";
 import InlineForm from "@/components/InlineForm.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
+import FileList from "@/components/FileList.vue";
+import type { FileItem } from "@/components/FileList.vue";
+import SharedFilePreviewPanel from "@/components/SharedFilePreviewPanel.vue";
 import { usePermission } from "@/composables/usePermission";
 import { useCatalogStore } from "@/stores/catalogStore";
 import { useDemandStore } from "@/stores/demandStore";
@@ -24,6 +27,8 @@ const selectedId = ref<number | null>(null);
 const creating = ref(false);
 const submitting = ref(false);
 const approveNote = ref("");
+const previewAsset = ref<any>(null);
+const assetsLoading = ref(false);
 
 const createForm = reactive({ catalogId: 0, title: "", purpose: "", deliveryPlan: "" });
 
@@ -61,7 +66,33 @@ async function loadPage() {
   } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
 
-function selectItem(id: number) { creating.value = false; selectedId.value = id; }
+function selectItem(id: number) {
+  creating.value = false;
+  selectedId.value = id;
+  previewAsset.value = null;
+  loadDemandAssets(id);
+}
+
+async function loadDemandAssets(demandId: number) {
+  const demand = demandStore.items.find((d) => d.id === demandId);
+  if (!demand) return;
+  const token = sessionStore.accessToken;
+  if (!token) return;
+  assetsLoading.value = true;
+  try {
+    await catalogStore.loadAssets(demand.catalogId, token);
+  } catch { /* aggregator may not have access to some catalogs */ }
+  finally { assetsLoading.value = false; }
+}
+
+const catalogAssets = computed(() => {
+  if (!selected.value || !selectedCatalog.value) return [];
+  return catalogStore.assetsForCatalog(selectedCatalog.value.id);
+});
+
+const catalogFileItems = computed<FileItem[]>(() => catalogAssets.value.map((a) => ({
+  id: a.id, fileName: a.fileName, fileSize: a.fileSize, fileType: a.fileType, uploadedAt: a.uploadedAt
+})));
 
 function startCreating() {
   selectedId.value = null; creating.value = true;
@@ -89,6 +120,7 @@ async function handleApprove() {
     ElMessage.success("需求已审批");
   } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
+
 
 onMounted(loadPage);
 </script>
@@ -155,6 +187,18 @@ onMounted(loadPage);
               <div><label>状态</label><span>{{ selectedCatalog.status }}</span></div>
             </div>
           </div>
+
+          <div v-if="catalogFileItems.length > 0" class="detail-section">
+            <h5 class="section-title">目录文件（{{ catalogFileItems.length }}）</h5>
+            <FileList
+              :files="catalogFileItems"
+              :editable="false"
+              :loading="assetsLoading"
+              @preview="(f) => previewAsset = catalogAssets.find((a) => a.id === f.id) ?? null"
+            />
+          </div>
+
+          <SharedFilePreviewPanel v-if="previewAsset" :asset="previewAsset" title="文件预览" />
 
           <div v-if="selected.approvalNote" class="detail-section">
             <h5 class="section-title">审批备注</h5>

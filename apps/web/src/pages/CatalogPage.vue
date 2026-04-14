@@ -87,6 +87,11 @@ function startCreating() {
 
 function cancelCreating() { creating.value = false; }
 
+function handleCreateFiles(event: Event) {
+  const input = event.target as HTMLInputElement;
+  createForm.files = Array.from(input.files ?? []);
+}
+
 async function handleCreate() {
   const token = sessionStore.accessToken;
   if (!token) return;
@@ -178,8 +183,22 @@ onMounted(loadPage);
               </el-form-item>
             </div>
             <el-form-item label="字段说明"><el-input v-model="createForm.fieldsDescription" type="textarea" :rows="2" /></el-form-item>
+            <el-form-item label="上传方式">
+              <el-select v-model="createForm.uploadMethod">
+                <el-option label="平台上传" value="平台上传" />
+                <el-option label="接口推送" value="接口推送" />
+                <el-option label="数据库同步" value="数据库同步" />
+                <el-option label="离线拷贝" value="离线拷贝" />
+              </el-select>
+            </el-form-item>
             <el-form-item label="规模描述"><el-input v-model="createForm.scaleDescription" /></el-form-item>
             <el-form-item label="描述"><el-input v-model="createForm.description" type="textarea" :rows="2" /></el-form-item>
+            <el-form-item label="初始文件">
+              <label class="file-upload-area">
+                <input type="file" multiple class="file-upload-input" @change="handleCreateFiles" />
+                <span class="file-upload-text">{{ createForm.files.length > 0 ? `已选择 ${createForm.files.length} 个文件` : '点击选择文件（可多选）' }}</span>
+              </label>
+            </el-form-item>
           </el-form>
         </InlineForm>
 
@@ -244,4 +263,8 @@ onMounted(loadPage);
 .info-grid span { font-size: var(--text-sm); color: var(--text-primary); }
 .detail-desc { font-size: var(--text-sm); color: var(--text-secondary); line-height: var(--leading-relaxed); margin: var(--sp-3) 0 0; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.file-upload-area { display: flex; align-items: center; justify-content: center; width: 100%; padding: var(--sp-4); border: 1px dashed var(--border); border-radius: var(--radius-sm); cursor: pointer; transition: border-color var(--duration-fast) var(--ease-default), background var(--duration-fast) var(--ease-default); }
+.file-upload-area:hover { border-color: var(--accent); background: var(--accent-subtle); }
+.file-upload-input { display: none; }
+.file-upload-text { font-size: var(--text-sm); color: var(--accent); font-weight: var(--weight-medium); }
 </style>
