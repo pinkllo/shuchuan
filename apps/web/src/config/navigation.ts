@@ -86,6 +86,14 @@ export const navItems: NavItem[] = [
     hint: "查看关键操作",
     icon: markRaw(DocumentCopy),
     roles: ["admin"]
+  },
+  {
+    name: "admin-processors",
+    path: "/admin/processors",
+    label: "处理器管理",
+    hint: "查看外部处理器",
+    icon: markRaw(Operation),
+    roles: ["admin"]
   }
 ];
 

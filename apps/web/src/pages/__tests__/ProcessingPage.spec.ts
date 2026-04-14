@@ -35,6 +35,18 @@ const loadAssetsMock = vi.fn().mockImplementation((catalogId: number) =>
 );
 const loadAllTasksMock = vi.fn().mockResolvedValue(undefined);
 const submitTaskMock = vi.fn().mockResolvedValue(undefined);
+const fetchOnlineProcessorsMock = vi.fn().mockResolvedValue([
+  {
+    id: 1,
+    name: "拆书服务",
+    taskType: "book_split",
+    description: "自动拆分",
+    endpointUrl: "http://localhost:9001",
+    status: "online",
+    lastHeartbeatAt: "2026-04-14T00:00:00Z",
+    registeredAt: "2026-04-14T00:00:00Z"
+  }
+]);
 
 const catalogItems = [
   {
@@ -109,6 +121,10 @@ vi.mock("@/api/http", () => ({
   getErrorMessage: (error: unknown) => String(error)
 }));
 
+vi.mock("@/api/processors", () => ({
+  fetchOnlineProcessors: (...args: unknown[]) => fetchOnlineProcessorsMock(...args)
+}));
+
 vi.mock("@/stores/session", () => ({
   useSessionStore: () => ({
     accessToken: "token-123"
@@ -167,7 +183,21 @@ vi.mock("@/stores/catalogStore", () => ({
 
 vi.mock("@/stores/taskStore", () => ({
   useTaskStore: () => ({
-    items: [],
+    items: [
+      {
+        id: 10,
+        demandId: 1,
+        inputAssetIds: [11],
+        createdBy: 3,
+        processorId: 1,
+        processorName: "拆书服务",
+        taskType: "book_split",
+        status: "running",
+        progress: 20,
+        note: "自动处理中",
+        createdAt: "2026-04-14T00:00:00Z"
+      }
+    ],
     loading: false,
     loadAll: loadAllTasksMock,
     submit: submitTaskMock,
@@ -296,6 +326,7 @@ describe("ProcessingPage", () => {
     );
     loadAllTasksMock.mockClear();
     submitTaskMock.mockClear();
+    fetchOnlineProcessorsMock.mockClear();
   });
 
   it("loads catalog assets by demand relation and clears stale file selections", async () => {
@@ -396,5 +427,36 @@ describe("ProcessingPage", () => {
     expect(wrapper.text()).toContain("目录摘要");
     expect(wrapper.text()).toContain("平台上传");
     expect(wrapper.get("[data-test='preview-panel']").text()).toContain("a.jsonl");
+  });
+
+  it("loads online processors and exposes automatic plus manual task type options", async () => {
+    const component = await import("@/pages/ProcessingPage.vue");
+    const wrapper = mount(component.default, {
+      global: {
+        directives: {
+          loading: {}
+        },
+        stubs: {
+          StatusPill: StatusPillStub,
+          ElDialog: ElDialogStub,
+          ElButton: ElButtonStub,
+          ElTable: ElTableStub,
+          ElTableColumn: ElTableColumnStub,
+          ElSelect: ElSelectStub,
+          ElOption: ElOptionStub,
+          ElForm: ElFormStub,
+          ElFormItem: ElFormItemStub,
+          ElInput: true,
+          ElInputNumber: true,
+          SharedFilePreviewPanel: SharedFilePreviewPanelStub
+        }
+      }
+    });
+
+    await flushPromises();
+
+    expect(fetchOnlineProcessorsMock).toHaveBeenCalledWith("token-123");
+    expect(wrapper.text()).toContain("自动 · 拆书服务");
+    expect(wrapper.text()).toContain("手动处理（自定义）");
   });
 });

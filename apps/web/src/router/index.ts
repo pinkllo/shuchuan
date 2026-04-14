@@ -108,6 +108,17 @@ const router = createRouter({
       }
     },
     {
+      path: "/admin/processors",
+      name: "admin-processors",
+      component: () => import("@/pages/AdminProcessorPage.vue"),
+      meta: {
+        auth: true,
+        roles: ["admin"],
+        title: "处理器管理",
+        summary: "管理员查看已注册外部处理服务与在线状态。"
+      }
+    },
+    {
       path: "/:pathMatch(.*)*",
       redirect: "/dashboard"
     }
