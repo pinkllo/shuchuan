@@ -1,3 +1,12 @@
 apps/web/node_modules/
 apps/web/dist/
+apps/api/.venv/
+apps/api/.pytest_cache/
+apps/api/.pytest_tmp/
+apps/api/.test_tmp/
+apps/api/.coverage
+apps/api/**/__pycache__/
+apps/api/**/*.pyc
+apps/api/*.egg-info/
+uploads/
 .worktrees/

@@ -1,214 +1,320 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import StatusPill from '@/components/StatusPill.vue'
-import DemandFormDialog from '@/components/DemandFormDialog.vue'
-import ApprovalDialog from '@/components/ApprovalDialog.vue'
-import FileUploadDialog from '@/components/FileUploadDialog.vue'
-import { useDemandStore, demandStatusLabels, demandStatusTones, type DemandItem } from '@/stores/demandStore'
-import { usePermission } from '@/composables/usePermission'
-import { ElMessage } from 'element-plus'
+import { computed, onMounted, reactive, ref } from "vue";
+import { ElMessage } from "element-plus";
 
-const demandStore = useDemandStore()
-const { can, isConsumer } = usePermission()
+import { getErrorMessage } from "@/api/http";
+import SharedFilePreviewPanel from "@/components/SharedFilePreviewPanel.vue";
+import StatusPill from "@/components/StatusPill.vue";
+import { usePermission } from "@/composables/usePermission";
+import { useCatalogStore } from "@/stores/catalogStore";
+import { useDemandStore } from "@/stores/demandStore";
+import { useSessionStore } from "@/stores/session";
+import { demandStatusLabels, demandStatusTones, type DemandCreatePayload, type DemandItem } from "@/types/demand";
+import { formatCatalogAssetFileSize } from "@/utils/catalogAssetPreview";
+import { buildCatalogOptionLabel, findCatalogById } from "@/utils/catalogPresentation";
 
-const showDemandForm = ref(false)
-const showApproval = ref(false)
-const showUpload = ref(false)
-const showDetail = ref(false)
+const sessionStore = useSessionStore();
+const permission = usePermission();
+const catalogStore = useCatalogStore();
+const demandStore = useDemandStore();
 
-const currentDemand = ref<DemandItem | null>(null)
-const filterStatus = ref('')
+const createDialog = ref(false);
+const reviewDialog = ref(false);
+const assetsDialog = ref(false);
+const currentDemand = ref<DemandItem | null>(null);
+const previewAssetId = ref<number | null>(null);
 
-const filteredItems = ref(demandStore.items)
+const createForm = reactive<DemandCreatePayload>({
+  catalogId: 0,
+  title: "",
+  purpose: "",
+  deliveryPlan: ""
+});
+const reviewNote = ref("");
 
-function doFilter() {
-  if (!filterStatus.value) {
-    filteredItems.value = demandStore.items
-  } else {
-    filteredItems.value = demandStore.items.filter(i => i.status === filterStatus.value)
+const selectedCatalog = computed(() => findCatalogById(catalogStore.publishedItems, createForm.catalogId));
+const currentCatalog = computed(() => {
+  if (!currentDemand.value) {
+    return null;
+  }
+  return findCatalogById(catalogStore.items, currentDemand.value.catalogId);
+});
+const currentAssets = computed(() => {
+  if (!currentDemand.value) {
+    return [];
+  }
+  return catalogStore.assetsForCatalog(currentDemand.value.catalogId);
+});
+const previewAsset = computed(() => {
+  if (!previewAssetId.value) {
+    return null;
+  }
+  return currentAssets.value.find((item) => item.id === previewAssetId.value) ?? null;
+});
+
+async function loadPage() {
+  const token = sessionStore.accessToken;
+  if (!token) {
+    return;
+  }
+  try {
+    await Promise.all([
+      demandStore.loadAll(token),
+      permission.isProvider.value ? catalogStore.loadMine(token) : catalogStore.loadPublished(token)
+    ]);
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
   }
 }
 
-function openApproval(item: DemandItem) {
-  currentDemand.value = item
-  showApproval.value = true
+async function handleCreate() {
+  const token = sessionStore.accessToken;
+  if (!token) {
+    return;
+  }
+  try {
+    await demandStore.submit(createForm, token);
+    createDialog.value = false;
+    Object.assign(createForm, { catalogId: 0, title: "", purpose: "", deliveryPlan: "" });
+    ElMessage.success("目录需求已提交");
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  }
 }
 
-function openUpload(item: DemandItem) {
-  currentDemand.value = item
-  showUpload.value = true
+async function handleApprove() {
+  const token = sessionStore.accessToken;
+  if (!token || !currentDemand.value) {
+    return;
+  }
+  try {
+    await demandStore.approve(currentDemand.value.id, reviewNote.value, token);
+    reviewDialog.value = false;
+    reviewNote.value = "";
+    ElMessage.success("需求已审批");
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  }
 }
 
-function openDetail(item: DemandItem) {
-  currentDemand.value = item
-  showDetail.value = true
+async function openAssets(item: DemandItem) {
+  const token = sessionStore.accessToken;
+  if (!token) {
+    return;
+  }
+  currentDemand.value = item;
+  try {
+    const assets = await catalogStore.loadAssets(item.catalogId, token);
+    previewAssetId.value = assets[0]?.id ?? null;
+    assetsDialog.value = true;
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  }
 }
 
-function handleMarkDelivered(item: DemandItem) {
-  demandStore.markDelivered(item.id)
-  ElMessage.success('已标记为已交付')
+function openReview(item: DemandItem) {
+  currentDemand.value = item;
+  reviewNote.value = "";
+  reviewDialog.value = true;
 }
 
-function handleDownload() {
-  ElMessage.info('下载功能将在对接后端后可用')
+function selectPreviewAsset(assetId: number) {
+  previewAssetId.value = assetId;
 }
+
+function resolveCatalog(catalogId: number) {
+  return findCatalogById(catalogStore.items, catalogId);
+}
+
+onMounted(loadPage);
 </script>
 
 <template>
-  <div class="page-grid">
-    <section class="surface-card">
-      <div class="card-head">
-        <div>
-          <h3>需求协同</h3>
-          <p>需求发起、审批、数据上传与交付的全流程管理。</p>
-        </div>
-        <div class="head-actions">
-          <el-select v-model="filterStatus" placeholder="按状态筛选" clearable style="width:160px" @change="doFilter">
-            <el-option v-for="(label, key) in demandStatusLabels" :key="key" :label="label" :value="key" />
+  <section class="surface-card">
+    <div class="card-head">
+      <div>
+        <h3>需求协同</h3>
+        <p>{{ permission.isProvider ? "审批按目录发起的需求。" : "按目录发起需求并查看审批结果。" }}</p>
+      </div>
+      <div class="head-actions">
+        <el-button plain @click="loadPage">刷新</el-button>
+        <el-button v-if="permission.isAggregator" type="primary" @click="createDialog = true">发起需求</el-button>
+      </div>
+    </div>
+
+    <el-table :data="demandStore.items" stripe v-loading="demandStore.loading">
+      <el-table-column prop="id" label="需求" width="90" />
+      <el-table-column prop="title" label="标题" min-width="220" />
+      <el-table-column label="申请目录" min-width="300">
+        <template #default="{ row }">
+          <div class="context-block">
+            <strong>{{ resolveCatalog(row.catalogId)?.name ?? `目录 #${row.catalogId}` }}</strong>
+            <small v-if="resolveCatalog(row.catalogId)">
+              {{ resolveCatalog(row.catalogId)?.version }} · {{ resolveCatalog(row.catalogId)?.dataType }} ·
+              {{ resolveCatalog(row.catalogId)?.granularity }} · {{ resolveCatalog(row.catalogId)?.assetCount }} 个文件
+            </small>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" width="120">
+        <template #default="{ row }">
+          <StatusPill :label="demandStatusLabels[row.status]" :tone="demandStatusTones[row.status]" />
+        </template>
+      </el-table-column>
+      <el-table-column prop="approvalNote" label="审批意见" min-width="200" />
+      <el-table-column label="操作" width="220" fixed="right">
+        <template #default="{ row }">
+          <el-button v-if="row.status === 'pending_approval' && permission.isProvider" type="primary" link @click="openReview(row)">审批</el-button>
+          <el-button
+            v-if="['approved', 'data_uploaded', 'processing', 'delivered'].includes(row.status)"
+            type="primary"
+            link
+            @click="openAssets(row)"
+          >
+            查看目录文件
+          </el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <el-dialog v-model="createDialog" title="按目录发起需求" width="620px">
+      <el-form :model="createForm" label-position="top">
+        <el-form-item label="选择目录">
+          <el-select v-model="createForm.catalogId" filterable placeholder="请选择要申请使用的目录">
+            <el-option
+              v-for="item in catalogStore.publishedItems"
+              :key="item.id"
+              :label="buildCatalogOptionLabel(item)"
+              :value="item.id"
+            />
           </el-select>
-          <el-button v-if="can('demand.create')" type="primary" @click="showDemandForm = true">发起需求</el-button>
+          <p v-if="catalogStore.publishedItems.length === 0" class="helper-text">
+            当前没有可选的已发布目录，请先由数据提供者发布目录。
+          </p>
+          <p class="helper-text">申请的是整个目录，处理阶段再勾选目录下的具体文件。</p>
+        </el-form-item>
+        <div v-if="selectedCatalog" class="summary-card">
+          <strong>{{ selectedCatalog.name }}</strong>
+          <div class="summary-card__meta">
+            <span>版本：{{ selectedCatalog.version }}</span>
+            <span>类型：{{ selectedCatalog.dataType }}</span>
+            <span>粒度：{{ selectedCatalog.granularity }}</span>
+            <span>文件数：{{ selectedCatalog.assetCount }}</span>
+            <span>敏感级别：{{ selectedCatalog.sensitivityLevel }}</span>
+          </div>
+          <p>{{ selectedCatalog.description }}</p>
+          <small>字段：{{ selectedCatalog.fieldsDescription }}；规模：{{ selectedCatalog.scaleDescription }}</small>
+        </div>
+        <el-form-item label="需求标题">
+          <el-input v-model="createForm.title" />
+        </el-form-item>
+        <el-form-item label="用途说明">
+          <el-input v-model="createForm.purpose" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-form-item label="交付计划">
+          <el-input v-model="createForm.deliveryPlan" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleCreate">提交</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="reviewDialog" title="审批需求" width="520px">
+      <el-input v-model="reviewNote" type="textarea" :rows="4" placeholder="请输入审批意见" />
+      <template #footer>
+        <el-button @click="reviewDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleApprove">通过</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="assetsDialog" title="目录文件" width="980px">
+      <div v-if="currentDemand && currentCatalog" class="summary-card summary-card--compact">
+        <strong>{{ currentDemand.title }}</strong>
+        <div class="summary-card__meta">
+          <span>目录：{{ currentCatalog.name }}</span>
+          <span>版本：{{ currentCatalog.version }}</span>
+          <span>类型：{{ currentCatalog.dataType }}</span>
+          <span>粒度：{{ currentCatalog.granularity }}</span>
         </div>
       </div>
-
-      <el-table :data="filteredItems" stripe>
-        <el-table-column prop="id" label="编号" width="100" />
-        <el-table-column label="需求标题" min-width="200">
-          <template #default="{ row }">
-            <el-button type="primary" link @click="openDetail(row)">{{ row.title }}</el-button>
-          </template>
-        </el-table-column>
-        <el-table-column prop="requester" label="发起方" width="130" />
-        <el-table-column prop="provider" label="提供方" width="130" />
-        <el-table-column prop="catalogName" label="关联目录" min-width="150" />
-        <el-table-column label="附件" width="80">
-          <template #default="{ row }">
-            <span v-if="row.files.length">{{ row.files.length }} 个</span>
-            <span v-else style="color:var(--text-muted)">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="110">
-          <template #default="{ row }">
-            <StatusPill :label="demandStatusLabels[row.status as keyof typeof demandStatusLabels]" :tone="demandStatusTones[row.status as keyof typeof demandStatusTones] as any" />
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
-          <template #default="{ row }">
-            <!-- 提供者：审批 / 上传 -->
-            <el-button v-if="can('demand.approve') && row.status === 'pending'" type="primary" link size="small" @click="openApproval(row)">审批</el-button>
-            <el-button v-if="can('demand.upload') && row.status === 'approved'" type="success" link size="small" @click="openUpload(row)">上传数据</el-button>
-            <!-- 汇聚者：标记交付 -->
-            <el-button v-if="can('task.manage') && row.status === 'processing'" type="success" link size="small" @click="handleMarkDelivered(row)">标记交付</el-button>
-            <!-- 使用者：下载 -->
-            <el-button v-if="can('delivery.download') && row.status === 'delivered'" type="primary" link size="small" @click="handleDownload">下载</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </section>
-
-    <section>
-      <article class="surface-card">
-        <div class="card-head">
-          <div>
-            <h3>当前统计</h3>
-            <p>需求各状态的分布概况。</p>
-          </div>
-        </div>
-        <div class="stat-list">
-          <div class="stat-row">
-            <span>待审批</span>
-            <strong class="stat-warn">{{ demandStore.pendingCount }}</strong>
-          </div>
-          <div class="stat-row">
-            <span>进行中</span>
-            <strong class="stat-info">{{ demandStore.activeCount }}</strong>
-          </div>
-          <div class="stat-row">
-            <span>已交付</span>
-            <strong class="stat-good">{{ demandStore.deliveredCount }}</strong>
-          </div>
-          <div class="stat-row">
-            <span>总计</span>
-            <strong>{{ demandStore.items.length }}</strong>
-          </div>
-        </div>
-      </article>
-    </section>
-
-    <!-- 需求详情抽屉 -->
-    <el-drawer v-model="showDetail" :title="`需求详情 — ${currentDemand?.id ?? ''}`" size="500px" direction="rtl">
-      <template v-if="currentDemand">
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="需求标题">{{ currentDemand.title }}</el-descriptions-item>
-          <el-descriptions-item label="发起方">{{ currentDemand.requester }}</el-descriptions-item>
-          <el-descriptions-item label="提供方">{{ currentDemand.provider }}</el-descriptions-item>
-          <el-descriptions-item label="关联目录">{{ currentDemand.catalogName }}</el-descriptions-item>
-          <el-descriptions-item label="用途说明">{{ currentDemand.purpose }}</el-descriptions-item>
-          <el-descriptions-item label="交付计划">{{ currentDemand.deliveryPlan || '—' }}</el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <StatusPill :label="demandStatusLabels[currentDemand.status]" :tone="demandStatusTones[currentDemand.status] as any" />
-          </el-descriptions-item>
-          <el-descriptions-item v-if="currentDemand.approvalNote" label="审批意见">{{ currentDemand.approvalNote }}</el-descriptions-item>
-          <el-descriptions-item label="创建时间">{{ currentDemand.createdAt }}</el-descriptions-item>
-          <el-descriptions-item label="更新时间">{{ currentDemand.updatedAt }}</el-descriptions-item>
-        </el-descriptions>
-
-        <div v-if="currentDemand.files.length" style="margin-top:20px">
-          <h4 style="margin:0 0 10px">已上传文件</h4>
-          <div v-for="f in currentDemand.files" :key="f.name" class="file-row">
-            <span>📄 {{ f.name }}</span>
-            <span class="file-meta">{{ f.size }} · {{ f.uploadedAt }}</span>
-          </div>
-        </div>
-      </template>
-    </el-drawer>
-
-    <DemandFormDialog v-model:visible="showDemandForm" />
-    <ApprovalDialog v-model:visible="showApproval" :demand="currentDemand" />
-    <FileUploadDialog v-model:visible="showUpload" :demand="currentDemand" />
-  </div>
+      <div class="preview-layout">
+        <el-table :data="currentAssets" stripe>
+          <el-table-column prop="fileName" label="文件名" min-width="220" />
+          <el-table-column prop="fileType" label="类型" width="160" />
+          <el-table-column label="大小" width="120">
+            <template #default="{ row }">
+              {{ formatCatalogAssetFileSize(row.fileSize) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="uploadedAt" label="上传时间" min-width="180" />
+          <el-table-column label="操作" width="100" fixed="right">
+            <template #default="{ row }">
+              <el-button type="primary" link @click="selectPreviewAsset(row.id)">预览</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <SharedFilePreviewPanel :asset="previewAsset" title="目录文件预览" />
+      </div>
+    </el-dialog>
+  </section>
 </template>
 
 <style scoped>
-.head-actions {
+.head-actions,
+.summary-card__meta,
+.preview-layout {
   display: flex;
-  gap: 10px;
-  align-items: center;
+  gap: 12px;
 }
-.stat-list {
+
+.helper-text,
+.context-block small {
+  color: var(--text-soft);
+}
+
+.helper-text {
+  margin: 8px 0 0;
+}
+
+.context-block,
+.summary-card {
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
-.stat-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 18px;
-  border-radius: 14px;
+
+.context-block strong,
+.summary-card strong,
+.summary-card p,
+.summary-card small {
+  margin: 0;
+}
+
+.summary-card {
+  margin-bottom: 16px;
+  padding: 16px;
+  border-radius: 18px;
   background: var(--surface-strong);
   border: 1px solid var(--border-soft);
 }
-.stat-row span {
+
+.summary-card__meta {
+  flex-wrap: wrap;
   color: var(--text-soft);
-}
-.stat-row strong {
-  font-size: 24px;
-}
-.stat-warn { color: #c77b1a; }
-.stat-info { color: #125c7a; }
-.stat-good { color: #14674f; }
-.file-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: rgba(239, 247, 245, 0.5);
-  border: 1px solid var(--border-soft);
-  margin-bottom: 6px;
-  font-size: 14px;
-}
-.file-meta {
-  color: var(--text-muted);
   font-size: 13px;
+}
+
+.summary-card--compact {
+  margin-bottom: 12px;
+}
+
+.preview-layout {
+  align-items: flex-start;
+}
+
+.preview-layout > * {
+  flex: 1;
+  min-width: 0;
 }
 </style>

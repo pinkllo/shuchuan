@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { readSession } from "@/stores/session";
+
+import { useSessionStore } from "@/stores/session";
+import type { UserRole } from "@/types/auth";
 
 const router = createRouter({
   history: createWebHistory(),
@@ -8,7 +10,13 @@ const router = createRouter({
       path: "/login",
       name: "login",
       component: () => import("@/pages/LoginPage.vue"),
-      meta: { shell: false, title: "进入平台" }
+      meta: { shell: false, title: "登录系统" }
+    },
+    {
+      path: "/register",
+      name: "register",
+      component: () => import("@/pages/RegisterPage.vue"),
+      meta: { shell: false, title: "提交注册申请" }
     },
     { path: "/", redirect: "/dashboard" },
     {
@@ -17,8 +25,9 @@ const router = createRouter({
       component: () => import("@/pages/DashboardPage.vue"),
       meta: {
         auth: true,
+        roles: ["admin", "provider", "aggregator", "consumer"],
         title: "平台概览",
-        summary: "从目录发布到指令生成，先把全链路的进度和风险看清楚。"
+        summary: "按角色查看当前链路状态、审核压力和交付结果。"
       }
     },
     {
@@ -27,8 +36,9 @@ const router = createRouter({
       component: () => import("@/pages/CatalogPage.vue"),
       meta: {
         auth: true,
+        roles: ["provider", "aggregator"],
         title: "数据目录",
-        summary: "展示数据提供者已发布的数据目录、可申请范围和版本节奏。"
+        summary: "提供者管理目录，汇聚者浏览可申请的数据供给。"
       }
     },
     {
@@ -37,8 +47,9 @@ const router = createRouter({
       component: () => import("@/pages/DemandPage.vue"),
       meta: {
         auth: true,
+        roles: ["provider", "aggregator"],
         title: "需求协同",
-        summary: "围绕需求发起、审批、交付和反馈，把中间状态收拢到一个界面。"
+        summary: "围绕真实需求状态、审批和原始文件上传推进链路。"
       }
     },
     {
@@ -47,21 +58,94 @@ const router = createRouter({
       component: () => import("@/pages/ProcessingPage.vue"),
       meta: {
         auth: true,
+        roles: ["aggregator"],
         title: "数据处理",
-        summary: "任务中心统一管理清洗、指令生成、拆书、病句修改等处理任务和能力接入。"
+        summary: "任务中心登记处理任务、推进状态，并记录半接入指令生成产物。"
       }
+    },
+    {
+      path: "/deliveries",
+      name: "deliveries",
+      component: () => import("@/pages/DeliveryPage.vue"),
+      meta: {
+        auth: true,
+        roles: ["consumer"],
+        title: "交付下载",
+        summary: "仅数据使用者可查看和下载最终交付结果。"
+      }
+    },
+    {
+      path: "/admin/approvals",
+      name: "admin-approvals",
+      component: () => import("@/pages/AdminUserApprovalPage.vue"),
+      meta: {
+        auth: true,
+        roles: ["admin"],
+        title: "注册审核",
+        summary: "管理员审批注册申请并分配角色。"
+      }
+    },
+    {
+      path: "/admin/users",
+      name: "admin-users",
+      component: () => import("@/pages/AdminUserManagementPage.vue"),
+      meta: {
+        auth: true,
+        roles: ["admin"],
+        title: "用户管理",
+        summary: "管理员查看平台账号与状态。"
+      }
+    },
+    {
+      path: "/admin/logs",
+      name: "admin-audit-logs",
+      component: () => import("@/pages/AdminAuditLogPage.vue"),
+      meta: {
+        auth: true,
+        roles: ["admin"],
+        title: "审计日志",
+        summary: "管理员查看关键写操作与交付下载记录。"
+      }
+    },
+    {
+      path: "/:pathMatch(.*)*",
+      redirect: "/dashboard"
     }
   ]
 });
 
-router.beforeEach((to) => {
-  const session = readSession();
-  if (to.meta.auth && !session.loggedIn) {
-    return { name: "login" };
+router.beforeEach(async (to) => {
+  const sessionStore = useSessionStore();
+
+  if (!sessionStore.restored) {
+    try {
+      await sessionStore.restoreSession();
+    } catch {
+      if (to.meta.auth) {
+        return {
+          name: "login",
+          query: { redirect: to.fullPath, reason: "session-expired" }
+        };
+      }
+    }
   }
-  if (to.name === "login" && session.loggedIn) {
+
+  if (to.meta.auth && !sessionStore.isAuthenticated) {
+    return {
+      name: "login",
+      query: { redirect: to.fullPath }
+    };
+  }
+
+  if ((to.name === "login" || to.name === "register") && sessionStore.isAuthenticated) {
     return { name: "dashboard" };
   }
+
+  const roles = to.meta.roles as UserRole[] | undefined;
+  if (roles && (!sessionStore.role || !roles.includes(sessionStore.role))) {
+    return { name: "dashboard" };
+  }
+
   return true;
 });
 
