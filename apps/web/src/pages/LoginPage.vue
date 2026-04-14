@@ -11,12 +11,8 @@ const router = useRouter();
 const route = useRoute();
 const sessionStore = useSessionStore();
 
-const form = reactive({
-  username: "",
-  password: ""
-});
+const form = reactive({ username: "", password: "" });
 const loading = ref(false);
-
 const sessionExpired = computed(() => route.query.reason === "session-expired");
 
 async function handleSubmit() {
@@ -39,36 +35,21 @@ async function handleSubmit() {
   <div class="auth-page">
     <section class="auth-card">
       <header class="auth-header">
-        <p class="auth-kicker">Data Flow Platform</p>
+        <span class="auth-kicker">Data Flow Platform</span>
         <h1>数传协同平台</h1>
-        <p>使用真实账号登录，进入目录发布、需求协同和交付链路。</p>
+        <p>使用账号登录，进入目录发布、需求协同和交付链路。</p>
       </header>
 
-      <el-alert
-        v-if="sessionExpired"
-        title="会话已失效，请重新登录。"
-        type="warning"
-        :closable="false"
-        show-icon
-      />
+      <el-alert v-if="sessionExpired" title="会话已失效，请重新登录。" type="warning" :closable="false" show-icon />
 
       <el-form :model="form" label-position="top" class="auth-form" @submit.prevent="handleSubmit">
         <el-form-item label="用户名">
           <el-input v-model="form.username" placeholder="请输入用户名" autocomplete="username" />
         </el-form-item>
         <el-form-item label="密码">
-          <el-input
-            v-model="form.password"
-            type="password"
-            placeholder="请输入密码"
-            show-password
-            autocomplete="current-password"
-            @keyup.enter="handleSubmit"
-          />
+          <el-input v-model="form.password" type="password" placeholder="请输入密码" show-password autocomplete="current-password" @keyup.enter="handleSubmit" />
         </el-form-item>
-        <el-button type="primary" :loading="loading" class="auth-submit" @click="handleSubmit">
-          登录系统
-        </el-button>
+        <el-button type="primary" :loading="loading" class="auth-submit" @click="handleSubmit">登录系统</el-button>
       </el-form>
 
       <footer class="auth-footer">
@@ -84,63 +65,58 @@ async function handleSubmit() {
   min-height: 100vh;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--sp-6);
+  background: var(--bg-page);
 }
 
 .auth-card {
-  width: min(480px, 100%);
+  width: min(440px, 100%);
   display: grid;
-  gap: 20px;
-  padding: 32px;
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid var(--border-soft);
-  box-shadow: var(--shadow-soft);
+  gap: var(--sp-5);
+  padding: var(--sp-8);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
 }
 
 .auth-header {
   display: grid;
-  gap: 10px;
+  gap: var(--sp-2);
 }
 
 .auth-kicker {
-  margin: 0;
-  font-size: 12px;
-  letter-spacing: 0.18em;
+  font-size: var(--text-xs);
+  letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: var(--accent-strong);
-}
-
-.auth-header h1,
-.auth-header p,
-.auth-footer {
-  margin: 0;
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
 }
 
 .auth-header h1 {
-  font-size: 30px;
-  color: var(--text-main);
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
 }
 
 .auth-header p {
-  color: var(--text-soft);
-  line-height: 1.7;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
 }
 
-.auth-form {
-  display: grid;
-  gap: 6px;
-}
-
-.auth-submit {
-  width: 100%;
-  margin-top: 8px;
-}
+.auth-form { display: grid; gap: var(--sp-1); }
+.auth-submit { width: 100%; margin-top: var(--sp-2); }
 
 .auth-footer {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-2);
   justify-content: center;
-  color: var(--text-soft);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
 }
+
+.auth-footer a { color: var(--accent); font-weight: var(--weight-medium); }
 </style>

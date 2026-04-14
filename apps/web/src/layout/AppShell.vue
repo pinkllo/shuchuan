@@ -13,29 +13,14 @@ const sessionStore = useSessionStore();
 
 const visibleNavItems = computed(() => filterNavItems(sessionStore.role));
 
-const currentNav = computed(() => {
-  const routeName = typeof route.name === "string" ? route.name : "";
-  return visibleNavItems.value.find((item) => item.name === routeName) ?? visibleNavItems.value[0] ?? null;
-});
-
-const roleColor = computed(() => {
+const roleTone = computed(() => {
   const map: Record<string, string> = {
-    admin: "#5d2e8c",
-    provider: "#0f5860",
-    aggregator: "#8f4c16",
-    consumer: "#1b4d8f"
+    admin: "info",
+    provider: "success",
+    aggregator: "warning",
+    consumer: "muted"
   };
-  return map[sessionStore.role ?? "provider"] ?? "#0f5860";
-});
-
-const roleBg = computed(() => {
-  const map: Record<string, string> = {
-    admin: "rgba(93, 46, 140, 0.14)",
-    provider: "rgba(24, 119, 123, 0.12)",
-    aggregator: "rgba(200, 140, 60, 0.14)",
-    consumer: "rgba(50, 100, 180, 0.12)"
-  };
-  return map[sessionStore.role ?? "provider"] ?? "rgba(24, 119, 123, 0.12)";
+  return map[sessionStore.role ?? "provider"] ?? "muted";
 });
 
 async function handleLogout() {
@@ -47,52 +32,35 @@ async function handleLogout() {
 
 <template>
   <div class="shell">
-    <header class="shell__top-nav">
+    <header class="shell__nav">
       <div class="shell__brand">
-        <h1>数传协同平台</h1>
-        <p>真实鉴权、真实链路、显式失败</p>
+        <span class="shell__logo">数传协同平台</span>
       </div>
 
-      <nav class="shell__nav">
+      <nav class="shell__tabs">
         <router-link
           v-for="item in visibleNavItems"
           :key="item.name"
           :to="item.path"
-          class="shell__nav-item"
-          :class="{ 'is-active': route.name === item.name }"
+          class="shell__tab"
+          :class="{ 'shell__tab--active': route.name === item.name }"
         >
-          <component :is="item.icon" class="shell__nav-icon" />
-          <span>{{ item.label }}</span>
+          {{ item.label }}
         </router-link>
       </nav>
 
-      <div class="shell__user-actions">
-        <span
-          class="shell__badge"
-          :style="{ background: roleBg, color: roleColor }"
-        >
+      <div class="shell__user">
+        <span class="shell__role" :class="`shell__role--${roleTone}`">
           {{ sessionStore.role ? roleLabels[sessionStore.role] : "未登录" }}
         </span>
-        <div class="shell__user-meta">
-          <strong>{{ sessionStore.displayName || sessionStore.user?.username }}</strong>
-          <small>{{ sessionStore.user?.email ?? sessionStore.user?.username }}</small>
-        </div>
-        <el-button link type="primary" @click="handleLogout">退出</el-button>
+        <span class="shell__username">{{ sessionStore.displayName || sessionStore.user?.username }}</span>
+        <el-button text size="small" @click="handleLogout">退出</el-button>
       </div>
     </header>
 
-    <div class="shell__main">
-      <header class="shell__page-header">
-        <h2>{{ String(route.meta.title ?? currentNav?.label ?? "平台页面") }}</h2>
-        <p class="shell__summary">
-          {{ String(route.meta.summary ?? currentNav?.hint ?? "基于角色权限访问当前页面。") }}
-        </p>
-      </header>
-
-      <main class="shell__content">
-        <router-view />
-      </main>
-    </div>
+    <main class="shell__content">
+      <router-view />
+    </main>
   </div>
 </template>
 
@@ -101,144 +69,123 @@ async function handleLogout() {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background-color: #f7f9fa;
 }
 
-.shell__top-nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 32px;
-  height: 64px;
-  background: #ffffff;
-  border-bottom: 1px solid #ebedf0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
-}
-
-.shell__brand h1 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #1a1a1a;
-  letter-spacing: 0.5px;
-}
-
-.shell__brand p {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #6b7280;
-}
-
+/* ── Top Nav ── */
 .shell__nav {
   display: flex;
-  gap: 32px;
   align-items: center;
-  height: 100%;
+  height: var(--nav-height);
+  padding: 0 var(--sp-6);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
 
-.shell__nav-item {
+.shell__brand {
+  margin-right: var(--sp-8);
+}
+
+.shell__logo {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+
+/* ── Nav Tabs ── */
+.shell__tabs {
+  display: flex;
+  gap: var(--sp-1);
+  height: 100%;
+  align-items: center;
+  flex: 1;
+}
+
+.shell__tab {
   display: flex;
   align-items: center;
-  gap: 8px;
   height: 100%;
-  color: #5c6b77;
+  padding: 0 var(--sp-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
   text-decoration: none;
-  font-size: 15px;
-  font-weight: 500;
   position: relative;
-  transition: color 0.2s;
+  transition: color var(--duration-fast) var(--ease-default);
 }
 
-.shell__nav-item:hover {
-  color: var(--accent-strong, #0f5860);
+.shell__tab:hover {
+  color: var(--text-primary);
 }
 
-.shell__nav-item.is-active {
-  color: var(--accent-strong, #0f5860);
+.shell__tab--active {
+  color: var(--accent);
 }
 
-.shell__nav-item.is-active::after {
+.shell__tab--active::after {
   content: '';
   position: absolute;
   bottom: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background-color: var(--accent-strong, #0f5860);
-  border-radius: 3px 3px 0 0;
+  left: var(--sp-3);
+  right: var(--sp-3);
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
 }
 
-.shell__nav-icon {
-  width: 18px;
-  height: 18px;
-}
-
-.shell__user-actions {
+/* ── User Area ── */
+.shell__user {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--sp-3);
+  margin-left: auto;
 }
 
-.shell__user-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.shell__role {
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
 }
 
-.shell__user-meta strong {
-  font-size: 14px;
-  color: #111827;
+.shell__role--success { background: var(--success-light); color: var(--success); }
+.shell__role--warning { background: var(--warning-light); color: var(--warning); }
+.shell__role--info { background: var(--info-light); color: var(--info); }
+.shell__role--muted { background: var(--bg-hover); color: var(--text-secondary); }
+
+.shell__username {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
 }
 
-.shell__user-meta small {
-  font-size: 12px;
-  color: #6b7280;
-}
-
-.shell__badge {
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.shell__main {
+/* ── Content ── */
+.shell__content {
   flex: 1;
-  padding: 32px;
-  max-width: 1400px;
-  margin: 0 auto;
+  max-width: var(--content-max);
   width: 100%;
+  margin: 0 auto;
+  padding: var(--sp-6);
   box-sizing: border-box;
 }
 
-.shell__page-header {
-  margin-bottom: 24px;
-}
-
-.shell__page-header h2 {
-  margin: 0 0 8px;
-  font-size: 24px;
-  color: #1a202c;
-  font-weight: 600;
-}
-
-.shell__summary {
-  margin: 0;
-  font-size: 14px;
-  color: #718096;
-}
-
-.shell__content {
-  min-width: 0;
-}
-
+/* ── Responsive ── */
 @media (max-width: 768px) {
-  .shell__top-nav {
-    padding: 0 16px;
+  .shell__nav {
+    padding: 0 var(--sp-3);
     overflow-x: auto;
   }
-  .shell__main {
-    padding: 16px;
+  .shell__brand {
+    margin-right: var(--sp-4);
+  }
+  .shell__content {
+    padding: var(--sp-4);
+  }
+  .shell__username {
+    display: none;
   }
 }
 </style>

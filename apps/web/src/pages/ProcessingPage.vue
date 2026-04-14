@@ -3,267 +3,246 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
 import { getErrorMessage } from "@/api/http";
-import { fetchOnlineProcessors } from "@/api/processors";
-import SharedFilePreviewPanel from "@/components/SharedFilePreviewPanel.vue";
-import StatusPill from "@/components/StatusPill.vue";
-import { useCapabilityStore } from "@/stores/capabilityStore";
+import MasterDetail from "@/components/MasterDetail.vue";
+import ItemCard from "@/components/ItemCard.vue";
+import DetailPanel from "@/components/DetailPanel.vue";
+import InlineForm from "@/components/InlineForm.vue";
+import StatusBadge from "@/components/StatusBadge.vue";
+import ProgressBar from "@/components/ProgressBar.vue";
+import { usePermission } from "@/composables/usePermission";
 import { useCatalogStore } from "@/stores/catalogStore";
 import { useDemandStore } from "@/stores/demandStore";
 import { useSessionStore } from "@/stores/session";
 import { useTaskStore } from "@/stores/taskStore";
-import type { Processor } from "@/types/processor";
-import { taskStatusLabels, taskStatusTones, type TaskStatus } from "@/types/task";
-import { formatCatalogAssetFileSize } from "@/utils/catalogAssetPreview";
-import { buildCatalogAssetOptionLabel, buildDemandOptionLabel, findCatalogById } from "@/utils/catalogPresentation";
-
-const MANUAL_OPTION_VALUE = "__manual__";
-const MANUAL_TASK_TYPE = "instruction";
+import type { TaskStatus } from "@/types/task";
+import { taskStatusLabels, formatTaskType } from "@/types/task";
 
 const sessionStore = useSessionStore();
-const capabilityStore = useCapabilityStore();
-const catalogStore = useCatalogStore();
-const demandStore = useDemandStore();
 const taskStore = useTaskStore();
+const demandStore = useDemandStore();
+const catalogStore = useCatalogStore();
+const permission = usePermission();
 
-const createDialog = ref(false);
+const selectedId = ref<number | null>(null);
+const creating = ref(false);
+const submitting = ref(false);
+const statusFilter = ref<TaskStatus | "">("");
+const searchQuery = ref("");
+
 const statusDialog = ref(false);
-const artifactDialog = ref(false);
 const currentTaskId = ref<number | null>(null);
 const nextStatus = ref<TaskStatus>("running");
 const statusNote = ref("");
-const previewAssetId = ref<number | null>(null);
-const onlineProcessors = ref<Processor[]>([]);
 
-const createForm = reactive({
-  demandId: 0,
-  inputAssetIds: [] as number[],
-  taskType: MANUAL_OPTION_VALUE,
-  model: "Qwen-2.5-72B",
-  promptTemplate: "标准问答模板",
-  batchSize: "32"
-});
+const artifactDialog = ref(false);
 const artifactForm = reactive({ fileName: "", filePath: "", sampleCount: 0, note: "" });
 
-const availableDemands = computed(() => demandStore.items.filter((item) => item.status === "data_uploaded" || item.status === "processing"));
-const selectedDemand = computed(() => demandStore.items.find((item) => item.id === createForm.demandId) ?? null);
-const selectedCatalog = computed(() => selectedDemand.value ? findCatalogById(catalogStore.items, selectedDemand.value.catalogId) : null);
+const createForm = reactive({
+  demandId: 0, inputAssetIds: [] as number[], taskType: "instruction",
+  model: "Qwen-2.5-72B", promptTemplate: "标准问答模板", batchSize: "32"
+});
+
+const toneBadge: Record<TaskStatus, 'success' | 'warning' | 'danger' | 'info'> = {
+  queued: "warning", running: "info", completed: "success", failed: "danger"
+};
+
+const filteredTasks = computed(() => {
+  let list = taskStore.items;
+  if (statusFilter.value) list = list.filter((t) => t.status === statusFilter.value);
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase();
+    list = list.filter((t) => t.taskType.toLowerCase().includes(q) || formatTaskType(t.taskType).includes(q));
+  }
+  return list;
+});
+
+const selected = computed(() => taskStore.items.find((t) => t.id === selectedId.value) ?? null);
+const availableDemands = computed(() => demandStore.items.filter((d) => d.status === "data_uploaded" || d.status === "processing"));
+const selectedDemand = computed(() => demandStore.items.find((d) => d.id === createForm.demandId) ?? null);
 const availableAssets = computed(() => selectedDemand.value ? catalogStore.assetsForCatalog(selectedDemand.value.catalogId) : []);
-const previewAsset = computed(() => availableAssets.value.find((item) => item.id === previewAssetId.value) ?? null);
-const isManualMode = computed(() => createForm.taskType === MANUAL_OPTION_VALUE);
-const taskTypeOptions = computed(() => [
-  {
-    value: MANUAL_OPTION_VALUE,
-    label: "手动处理（自定义）",
-    description: "保持现有手动任务登记与人工推进模式。"
-  },
-  ...onlineProcessors.value.map((processor) => ({
-    value: processor.taskType,
-    label: `自动 · ${processor.name}`,
-    description: processor.description || processor.taskType
-  }))
-]);
-const selectedTaskTypeDescription = computed(
-  () => taskTypeOptions.value.find((item) => item.value === createForm.taskType)?.description ?? ""
-);
+const isManual = computed(() => selected.value && !selected.value.processorId);
 
 async function loadPage() {
   const token = sessionStore.accessToken;
   if (!token) return;
   try {
-    await Promise.all([
-      demandStore.loadAll(token),
-      taskStore.loadAll(token),
-      catalogStore.loadPublished(token),
-      loadProcessors(token)
-    ]);
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
+    await Promise.all([taskStore.loadAll(token), demandStore.loadAll(token), catalogStore.loadPublished(token)]);
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
 
-async function loadProcessors(token: string) {
-  onlineProcessors.value = await fetchOnlineProcessors(token);
+function selectItem(id: number) { creating.value = false; selectedId.value = id; }
+
+function startCreating() {
+  selectedId.value = null; creating.value = true;
+  Object.assign(createForm, { demandId: 0, inputAssetIds: [], taskType: "instruction", model: "Qwen-2.5-72B", promptTemplate: "标准问答模板", batchSize: "32" });
 }
 
 watch(() => createForm.demandId, async (demandId) => {
-  const token = sessionStore.accessToken;
   createForm.inputAssetIds = [];
-  previewAssetId.value = null;
-  if (!token || !demandId) return;
-  const demand = demandStore.items.find((item) => item.id === demandId);
+  if (!demandId) return;
+  const demand = demandStore.items.find((d) => d.id === demandId);
   if (!demand) return;
-  try {
-    const assets = await catalogStore.loadAssets(demand.catalogId, token);
-    previewAssetId.value = assets[0]?.id ?? null;
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
+  const token = sessionStore.accessToken;
+  if (token) try { await catalogStore.loadAssets(demand.catalogId, token); } catch {}
 });
 
-async function handleCreateTask() {
+async function handleCreate() {
+  const token = sessionStore.accessToken;
+  if (!token) return;
+  submitting.value = true;
+  try {
+    const task = await taskStore.submit({
+      demandId: createForm.demandId, inputAssetIds: createForm.inputAssetIds, taskType: createForm.taskType,
+      config: { model: createForm.model, promptTemplate: createForm.promptTemplate, batchSize: createForm.batchSize }
+    }, token);
+    creating.value = false; selectedId.value = task!.id;
+    ElMessage.success("任务已创建");
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
+  finally { submitting.value = false; }
+}
+
+async function handleUpdateStatus(taskId: number, status: TaskStatus, note: string) {
   const token = sessionStore.accessToken;
   if (!token) return;
   try {
-    await taskStore.submit({
-      demandId: createForm.demandId,
-      inputAssetIds: createForm.inputAssetIds,
-      taskType: isManualMode.value ? MANUAL_TASK_TYPE : createForm.taskType,
-      config: { model: createForm.model, promptTemplate: createForm.promptTemplate, batchSize: createForm.batchSize }
-    }, token);
-    closeCreateDialog();
-    ElMessage.success("任务已创建");
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
-}
-
-function openCreateDialog() {
-  createDialog.value = true;
-  createForm.demandId = 0;
-  createForm.inputAssetIds = [];
-  createForm.taskType = MANUAL_OPTION_VALUE;
-  previewAssetId.value = null;
-}
-
-function closeCreateDialog() {
-  createDialog.value = false;
-  createForm.demandId = 0;
-  createForm.inputAssetIds = [];
-  createForm.taskType = MANUAL_OPTION_VALUE;
-  previewAssetId.value = null;
-}
-
-function openStatusDialog(taskId: number, status: TaskStatus) {
-  currentTaskId.value = taskId;
-  nextStatus.value = status;
-  statusNote.value = "";
-  statusDialog.value = true;
-}
-
-async function handleUpdateStatus() {
-  const token = sessionStore.accessToken;
-  if (!token || currentTaskId.value === null) return;
-  try {
-    await taskStore.updateStatus(currentTaskId.value, nextStatus.value, statusNote.value, token);
-    statusDialog.value = false;
+    await taskStore.updateStatus(taskId, status, note, token);
     ElMessage.success("任务状态已更新");
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
-}
-
-function openArtifactDialog(taskId: number) {
-  currentTaskId.value = taskId;
-  Object.assign(artifactForm, { fileName: "", filePath: "", sampleCount: 0, note: "" });
-  artifactDialog.value = true;
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
 
 async function handleRegisterArtifact() {
   const token = sessionStore.accessToken;
-  if (!token || currentTaskId.value === null) return;
+  if (!token || !selected.value) return;
   try {
-    await taskStore.registerArtifact(currentTaskId.value, {
-      artifactType: "instruction_jsonl",
-      fileName: artifactForm.fileName,
-      filePath: artifactForm.filePath,
-      sampleCount: artifactForm.sampleCount,
-      note: artifactForm.note
+    await taskStore.registerArtifact(selected.value.id, {
+      artifactType: "instruction_jsonl", fileName: artifactForm.fileName,
+      filePath: artifactForm.filePath, sampleCount: artifactForm.sampleCount, note: artifactForm.note
     }, token);
     artifactDialog.value = false;
     ElMessage.success("产物已登记");
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
 
 onMounted(loadPage);
 </script>
 
 <template>
-  <div class="page-grid">
-    <section class="surface-card">
-      <div class="card-head">
-        <div><h3>任务中心</h3><p>登记半接入指令生成任务，显式推进状态并登记产物。</p></div>
-        <div class="head-actions"><el-button plain @click="loadPage">刷新</el-button><el-button type="primary" @click="openCreateDialog">新建任务</el-button></div>
-      </div>
-      <el-table :data="taskStore.items" stripe v-loading="taskStore.loading">
-        <el-table-column prop="id" label="任务" width="90" />
-        <el-table-column prop="demandId" label="需求" width="90" />
-        <el-table-column label="输入文件" width="120"><template #default="{ row }">{{ row.inputAssetIds.length }} 个</template></el-table-column>
-        <el-table-column prop="taskType" label="类型" width="120" />
-        <el-table-column label="处理器" width="140"><template #default="{ row }">{{ row.processorName ?? "手动" }}</template></el-table-column>
-        <el-table-column label="状态" width="120"><template #default="{ row }"><StatusPill :label="taskStatusLabels[row.status]" :tone="taskStatusTones[row.status]" /></template></el-table-column>
-        <el-table-column prop="note" label="备注" min-width="220" />
-        <el-table-column label="操作" width="220" fixed="right">
-          <template #default="{ row }">
-            <el-button v-if="row.status === 'queued'" type="primary" link @click="openStatusDialog(row.id, 'running')">开始</el-button>
-            <el-button v-if="row.status === 'running'" type="primary" link @click="openStatusDialog(row.id, 'completed')">完成</el-button>
-            <el-button v-if="row.status === 'running'" type="danger" link @click="openStatusDialog(row.id, 'failed')">失败</el-button>
-            <el-button v-if="row.status === 'completed'" type="primary" link @click="openArtifactDialog(row.id)">登记产物</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </section>
-
-    <section class="surface-card">
-      <div class="card-head"><div><h3>能力清单</h3><p>拆书和病句修改仅作为后续能力占位，不进入一期真实主链路。</p></div></div>
-      <div class="quick-actions"><article v-for="item in capabilityStore.capabilities" :key="item.id" class="quick-btn quick-btn--muted"><strong>{{ item.name }}</strong><span>{{ item.description }}</span></article></div>
-    </section>
-
-    <el-dialog v-model="createDialog" title="新建处理任务" width="760px">
-      <el-form label-position="top">
-        <el-form-item label="需求"><el-select v-model="createForm.demandId" filterable placeholder="请选择待处理需求"><el-option v-for="item in availableDemands" :key="item.id" :label="buildDemandOptionLabel(item, findCatalogById(catalogStore.items, item.catalogId))" :value="item.id" /></el-select></el-form-item>
-        <div v-if="selectedDemand" class="summary-grid">
-          <article class="summary-card"><h4>当前所选需求</h4><strong>{{ selectedDemand.title }}</strong><small>用途：{{ selectedDemand.purpose }}</small><small>交付计划：{{ selectedDemand.deliveryPlan }}</small></article>
-          <article v-if="selectedCatalog" class="summary-card"><h4>目录摘要</h4><strong>{{ selectedCatalog.name }} {{ selectedCatalog.version }}</strong><small>{{ selectedCatalog.dataType }} · {{ selectedCatalog.granularity }}</small><small>{{ selectedCatalog.assetCount }} 个文件 · {{ selectedCatalog.uploadMethod }}</small></article>
-        </div>
-        <el-form-item label="目录文件">
-          <el-select v-model="createForm.inputAssetIds" multiple filterable collapse-tags collapse-tags-tooltip placeholder="请选择要参与处理的目录文件">
-            <el-option v-for="item in availableAssets" :key="item.id" :label="buildCatalogAssetOptionLabel(item)" :value="item.id" />
+  <div>
+    <MasterDetail :has-selection="selected !== null || creating" empty-title="选择一个任务" empty-description="从左侧选择任务以查看详情，或点击新建。">
+      <template #list>
+        <div class="list-header">
+          <el-input v-model="searchQuery" placeholder="搜索任务..." size="small" clearable style="flex:1" />
+          <el-select v-model="statusFilter" placeholder="状态" size="small" clearable style="width:100px">
+            <el-option label="排队中" value="queued" /><el-option label="执行中" value="running" />
+            <el-option label="已完成" value="completed" /><el-option label="失败" value="failed" />
           </el-select>
-          <p v-if="selectedCatalog" class="selection-note">当前按目录加载文件：{{ selectedCatalog.name }} {{ selectedCatalog.version }}，共 {{ availableAssets.length }} 个文件。</p>
-        </el-form-item>
-        <div v-if="availableAssets.length > 0" class="asset-list">
-          <article v-for="item in availableAssets" :key="item.id" class="asset-row">
-            <div class="asset-row__body"><strong>{{ item.fileName }}</strong><small>{{ item.fileType }} · {{ formatCatalogAssetFileSize(item.fileSize) }} · {{ item.uploadedAt }}</small></div>
-            <div class="asset-row__actions"><small v-if="createForm.inputAssetIds.includes(item.id)">已勾选</small><el-button type="primary" link @click="previewAssetId = item.id">预览</el-button></div>
-          </article>
+          <el-button type="primary" size="small" @click="startCreating">+ 新建</el-button>
         </div>
-        <SharedFilePreviewPanel :asset="previewAsset" title="任务输入文件预览" />
-        <el-form-item label="能力"><el-select v-model="createForm.taskType"><el-option v-for="item in taskTypeOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
-        <p class="selection-note">{{ selectedTaskTypeDescription }}</p>
-        <div class="form-grid"><el-form-item label="模型"><el-input v-model="createForm.model" /></el-form-item><el-form-item label="批次大小"><el-input v-model="createForm.batchSize" /></el-form-item></div>
-        <el-form-item label="提示词模板"><el-input v-model="createForm.promptTemplate" /></el-form-item>
-      </el-form>
-      <template #footer><el-button @click="closeCreateDialog">取消</el-button><el-button type="primary" :disabled="createForm.inputAssetIds.length === 0" @click="handleCreateTask">创建</el-button></template>
-    </el-dialog>
+        <ItemCard v-for="t in filteredTasks" :key="t.id" :selected="selectedId === t.id" @click="selectItem(t.id)">
+          <div class="item-title">{{ formatTaskType(t.taskType) }} #{{ t.id }}</div>
+          <div class="item-meta">
+            <StatusBadge :label="taskStatusLabels[t.status]" :tone="toneBadge[t.status]" />
+            <span>{{ t.processorName ?? '手动' }}</span>
+          </div>
+          <ProgressBar v-if="t.status === 'running'" :value="t.progress" style="margin-top: 6px" />
+        </ItemCard>
+        <div v-if="filteredTasks.length === 0" class="list-empty">暂无任务</div>
+      </template>
 
-    <el-dialog v-model="statusDialog" title="更新任务状态" width="520px">
-      <el-form label-position="top"><el-form-item label="目标状态"><el-input :model-value="taskStatusLabels[nextStatus]" disabled /></el-form-item><el-form-item label="备注"><el-input v-model="statusNote" type="textarea" :rows="4" /></el-form-item></el-form>
-      <template #footer><el-button @click="statusDialog = false">取消</el-button><el-button type="primary" @click="handleUpdateStatus">提交</el-button></template>
-    </el-dialog>
+      <template #detail>
+        <InlineForm v-if="creating" title="新建处理任务" :loading="submitting" @submit="handleCreate" @cancel="creating = false">
+          <el-form label-position="top">
+            <el-form-item label="需求">
+              <el-select v-model="createForm.demandId" filterable placeholder="选择需求">
+                <el-option v-for="d in availableDemands" :key="d.id" :label="`#${d.id} ${d.title}`" :value="d.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="availableAssets.length > 0" label="输入文件">
+              <el-select v-model="createForm.inputAssetIds" multiple filterable collapse-tags placeholder="选择文件">
+                <el-option v-for="a in availableAssets" :key="a.id" :label="a.fileName" :value="a.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="任务类型"><el-input v-model="createForm.taskType" /></el-form-item>
+            <div class="form-row">
+              <el-form-item label="模型"><el-input v-model="createForm.model" /></el-form-item>
+              <el-form-item label="批次大小"><el-input v-model="createForm.batchSize" /></el-form-item>
+            </div>
+            <el-form-item label="提示词模板"><el-input v-model="createForm.promptTemplate" /></el-form-item>
+          </el-form>
+        </InlineForm>
 
-    <el-dialog v-model="artifactDialog" title="登记任务产物" width="560px">
+        <DetailPanel v-else-if="selected">
+          <template #header>
+            <div class="detail-head">
+              <div>
+                <h3 class="detail-title">{{ formatTaskType(selected.taskType) }} #{{ selected.id }}</h3>
+                <StatusBadge :label="taskStatusLabels[selected.status]" :tone="toneBadge[selected.status]" />
+              </div>
+            </div>
+          </template>
+
+          <div class="detail-section">
+            <h5 class="section-title">任务信息</h5>
+            <div class="info-grid">
+              <div><label>需求</label><span>#{{ selected.demandId }}</span></div>
+              <div><label>处理器</label><span>{{ selected.processorName ?? '手动模式' }}</span></div>
+              <div v-if="selected.config?.model"><label>模型</label><span>{{ selected.config.model }}</span></div>
+              <div v-if="selected.config?.batchSize"><label>批次</label><span>{{ selected.config.batchSize }}</span></div>
+            </div>
+          </div>
+
+          <div v-if="selected.status === 'running'" class="detail-section">
+            <h5 class="section-title">进度</h5>
+            <ProgressBar :value="selected.progress" />
+            <p v-if="selected.note" class="progress-msg">{{ selected.note }}</p>
+          </div>
+
+          <div v-if="selected.note && selected.status !== 'running'" class="detail-section">
+            <h5 class="section-title">备注</h5>
+            <p class="detail-desc">{{ selected.note }}</p>
+          </div>
+
+          <template #actions>
+            <template v-if="isManual">
+              <el-button v-if="selected.status === 'queued'" type="primary" size="small" @click="handleUpdateStatus(selected.id, 'running', '')">开始</el-button>
+              <el-button v-if="selected.status === 'running'" type="primary" size="small" @click="handleUpdateStatus(selected.id, 'completed', '')">完成</el-button>
+              <el-button v-if="selected.status === 'running'" type="danger" size="small" @click="handleUpdateStatus(selected.id, 'failed', '手动标记失败')">失败</el-button>
+              <el-button v-if="selected.status === 'completed'" size="small" @click="artifactDialog = true; Object.assign(artifactForm, { fileName: '', filePath: '', sampleCount: 0, note: '' })">登记产物</el-button>
+            </template>
+          </template>
+        </DetailPanel>
+      </template>
+    </MasterDetail>
+
+    <el-dialog v-model="artifactDialog" title="登记任务产物" width="520px">
       <el-form label-position="top">
         <el-form-item label="文件名"><el-input v-model="artifactForm.fileName" /></el-form-item>
-        <el-form-item label="文件路径"><el-input v-model="artifactForm.filePath" placeholder="例如 uploads/delivery/3/result.jsonl" /></el-form-item>
+        <el-form-item label="文件路径"><el-input v-model="artifactForm.filePath" placeholder="uploads/delivery/..." /></el-form-item>
         <el-form-item label="样本数"><el-input-number v-model="artifactForm.sampleCount" :min="1" /></el-form-item>
-        <el-form-item label="备注"><el-input v-model="artifactForm.note" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="备注"><el-input v-model="artifactForm.note" type="textarea" :rows="2" /></el-form-item>
       </el-form>
-      <template #footer><el-button @click="artifactDialog = false">取消</el-button><el-button type="primary" @click="handleRegisterArtifact">登记</el-button></template>
+      <template #footer>
+        <el-button @click="artifactDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleRegisterArtifact">登记</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.head-actions,.form-grid,.summary-grid,.asset-row,.asset-row__actions{display:flex;gap:12px}
-.form-grid>*,.summary-grid>*{flex:1}
-.selection-note,.summary-card small,.asset-row__body small,.asset-row__actions small{color:var(--text-soft)}
-.selection-note{margin:8px 0 0}
-.summary-grid,.asset-list{margin-bottom:16px}
-.summary-card,.asset-row{padding:14px 16px;border-radius:18px;border:1px solid var(--border-soft);background:var(--surface-strong)}
-.summary-card,.asset-row__body,.asset-list{display:grid;gap:6px}
-.summary-card h4,.summary-card strong,.summary-card small,.asset-row__body strong,.asset-row__body small{margin:0}
-.asset-row{align-items:center;justify-content:space-between}
-.asset-row__actions{align-items:center}
+.list-header { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-3); align-items: center; }
+.list-empty { padding: var(--sp-6); text-align: center; color: var(--text-tertiary); font-size: var(--text-sm); }
+.item-title { font-weight: var(--weight-medium); font-size: var(--text-sm); color: var(--text-primary); }
+.item-meta { display: flex; align-items: center; gap: var(--sp-2); margin-top: 4px; font-size: var(--text-xs); color: var(--text-tertiary); }
+.detail-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.detail-head > div:first-child { display: flex; flex-direction: column; gap: var(--sp-2); }
+.detail-title { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.detail-section { margin-bottom: var(--sp-5); }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.info-grid div { display: flex; flex-direction: column; gap: 2px; }
+.info-grid label { font-size: var(--text-xs); color: var(--text-tertiary); font-weight: var(--weight-medium); }
+.info-grid span { font-size: var(--text-sm); color: var(--text-primary); }
+.detail-desc { font-size: var(--text-sm); color: var(--text-secondary); line-height: var(--leading-relaxed); margin: 0; }
+.progress-msg { font-size: var(--text-sm); color: var(--text-secondary); margin: var(--sp-2) 0 0; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
 </style>

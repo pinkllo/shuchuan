@@ -1,341 +1,247 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage } from "element-plus";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
 
 import { getErrorMessage } from "@/api/http";
-import StatusPill from "@/components/StatusPill.vue";
+import MasterDetail from "@/components/MasterDetail.vue";
+import ItemCard from "@/components/ItemCard.vue";
+import DetailPanel from "@/components/DetailPanel.vue";
+import InlineForm from "@/components/InlineForm.vue";
+import StatusBadge from "@/components/StatusBadge.vue";
+import FileList from "@/components/FileList.vue";
+import type { FileItem } from "@/components/FileList.vue";
+import SharedFilePreviewPanel from "@/components/SharedFilePreviewPanel.vue";
 import { usePermission } from "@/composables/usePermission";
 import { useCatalogStore } from "@/stores/catalogStore";
 import { useSessionStore } from "@/stores/session";
-import type { CatalogAssetItem } from "@/types/catalogAsset";
-import {
-  catalogStatusLabels,
-  catalogStatusTones,
-  formatSensitivity,
-  type CatalogCreatePayload,
-  type CatalogItem
-} from "@/types/catalog";
-
-const DEFAULT_UPLOAD_METHOD = "平台上传";
-const uploadMethodOptions = [DEFAULT_UPLOAD_METHOD, "接口推送", "数据库同步", "离线拷贝"];
+import type { CatalogItem, CatalogStatus } from "@/types/catalog";
+import { catalogStatusLabels } from "@/types/catalog";
 
 const sessionStore = useSessionStore();
-const permission = usePermission();
 const catalogStore = useCatalogStore();
+const permission = usePermission();
 
-const dialogVisible = ref(false);
-const assetsDialogVisible = ref(false);
-const publishAfterCreate = ref(false);
-const search = ref("");
-const currentCatalog = ref<CatalogItem | null>(null);
-const createFileInput = ref<HTMLInputElement | null>(null);
-const assetFileInput = ref<HTMLInputElement | null>(null);
-const pendingAssetFiles = ref<File[]>([]);
-const form = reactive<CatalogCreatePayload>({
-  name: "",
-  dataType: "text",
-  granularity: "",
-  version: "",
-  fieldsDescription: "",
-  scaleDescription: "",
-  uploadMethod: DEFAULT_UPLOAD_METHOD,
-  sensitivityLevel: "internal",
-  description: "",
-  files: []
+const selectedId = ref<number | null>(null);
+const creating = ref(false);
+const searchQuery = ref("");
+const statusFilter = ref<CatalogStatus | "">("");
+const submitting = ref(false);
+const previewAsset = ref<any>(null);
+
+const createForm = reactive({
+  name: "", dataType: "text", granularity: "document", version: "1.0",
+  fieldsDescription: "", scaleDescription: "", uploadMethod: "batch",
+  sensitivityLevel: "internal", description: "", files: [] as File[]
 });
+
+const toneBadge: Record<string, 'success' | 'warning' | 'info' | 'muted'> = {
+  draft: "warning", published: "success", archived: "muted"
+};
 
 const filteredCatalogs = computed(() => {
-  const query = search.value.trim().toLowerCase();
-  if (!query) {
-    return catalogStore.items;
+  let list = catalogStore.items;
+  if (statusFilter.value) list = list.filter((c) => c.status === statusFilter.value);
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase();
+    list = list.filter((c) => c.name.toLowerCase().includes(q));
   }
-  return catalogStore.items.filter((item) => item.name.toLowerCase().includes(query) || item.version.toLowerCase().includes(query));
+  return list;
 });
 
-const currentAssets = computed<CatalogAssetItem[]>(() => {
-  if (!currentCatalog.value) {
-    return [];
-  }
-  return catalogStore.assetsForCatalog(currentCatalog.value.id);
-});
+const selected = computed(() => catalogStore.items.find((c) => c.id === selectedId.value) ?? null);
+const assets = computed(() => selected.value ? catalogStore.assetsForCatalog(selected.value.id) : []);
+const fileItems = computed<FileItem[]>(() => assets.value.map((a) => ({
+  id: a.id, fileName: a.fileName, fileSize: a.fileSize, fileType: a.fileType, uploadedAt: a.uploadedAt
+})));
 
-async function loadCatalogs() {
+async function loadPage() {
   const token = sessionStore.accessToken;
-  if (!token) {
-    return;
-  }
+  if (!token) return;
   try {
-    if (permission.isProvider.value) {
-      await catalogStore.loadMine(token);
-      return;
-    }
-    await catalogStore.loadPublished(token);
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
+    if (permission.isProvider.value) await catalogStore.loadMine(token);
+    else await catalogStore.loadPublished(token);
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
+
+function selectItem(id: number) {
+  creating.value = false;
+  selectedId.value = id;
+  loadAssets(id);
+}
+
+async function loadAssets(catalogId: number) {
+  const token = sessionStore.accessToken;
+  if (!token) return;
+  try { await catalogStore.loadAssets(catalogId, token); } catch (error) { ElMessage.error(getErrorMessage(error)); }
+}
+
+function startCreating() {
+  selectedId.value = null;
+  creating.value = true;
+  Object.assign(createForm, {
+    name: "", dataType: "text", granularity: "document", version: "1.0",
+    fieldsDescription: "", scaleDescription: "", uploadMethod: "batch",
+    sensitivityLevel: "internal", description: "", files: []
+  });
+}
+
+function cancelCreating() { creating.value = false; }
 
 async function handleCreate() {
   const token = sessionStore.accessToken;
-  if (!token) {
-    return;
-  }
+  if (!token) return;
+  submitting.value = true;
   try {
-    const created = await catalogStore.submitCatalog(form, token);
-    if (publishAfterCreate.value) {
-      await catalogStore.publish(created.id, token);
-    }
-    dialogVisible.value = false;
-    resetForm();
-    ElMessage.success("目录已提交");
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
+    const catalog = await catalogStore.submitCatalog({ ...createForm }, token);
+    creating.value = false;
+    selectedId.value = catalog.id;
+    ElMessage.success("目录已创建");
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
+  finally { submitting.value = false; }
 }
 
-async function openAssetManager(item: CatalogItem) {
+async function handlePublish() {
   const token = sessionStore.accessToken;
-  if (!token) {
-    return;
-  }
-  currentCatalog.value = item;
-  pendingAssetFiles.value = [];
+  if (!token || !selected.value) return;
   try {
-    await catalogStore.loadAssets(item.id, token);
-    assetsDialogVisible.value = true;
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
-}
-
-async function handleAppendAssets() {
-  const token = sessionStore.accessToken;
-  if (!token || !currentCatalog.value || pendingAssetFiles.value.length === 0) {
-    return;
-  }
-  try {
-    await catalogStore.appendAssets(currentCatalog.value.id, pendingAssetFiles.value, token);
-    pendingAssetFiles.value = [];
-    resetAssetInput();
-    ElMessage.success("目录文件已追加");
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
-}
-
-async function handleRemoveAsset(assetId: number) {
-  const token = sessionStore.accessToken;
-  if (!token || !currentCatalog.value) {
-    return;
-  }
-  try {
-    await catalogStore.removeAsset(currentCatalog.value.id, assetId, token);
-    ElMessage.success("目录文件已删除");
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
-}
-
-async function handlePublish(id: number) {
-  const token = sessionStore.accessToken;
-  if (!token) {
-    return;
-  }
-  try {
-    await catalogStore.publish(id, token);
+    await catalogStore.publish(selected.value.id, token);
     ElMessage.success("目录已发布");
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
 
-async function handleArchive(id: number) {
+async function handleArchive() {
   const token = sessionStore.accessToken;
-  if (!token) {
-    return;
-  }
+  if (!token || !selected.value) return;
   try {
-    await catalogStore.archive(id, token);
+    await catalogStore.archive(selected.value.id, token);
     ElMessage.success("目录已归档");
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
 
-function handleCreateFiles(event: Event) {
-  const input = event.target as HTMLInputElement;
-  form.files = Array.from(input.files ?? []);
+async function handleUploadFiles(files: FileList) {
+  const token = sessionStore.accessToken;
+  if (!token || !selected.value) return;
+  try {
+    await catalogStore.appendAssets(selected.value.id, Array.from(files), token);
+    ElMessage.success(`${files.length} 个文件已上传`);
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
 
-function handleAssetFiles(event: Event) {
-  const input = event.target as HTMLInputElement;
-  pendingAssetFiles.value = Array.from(input.files ?? []);
+async function handleDeleteFile(file: FileItem) {
+  const token = sessionStore.accessToken;
+  if (!token || !selected.value) return;
+  try {
+    await catalogStore.removeAsset(selected.value.id, file.id, token);
+    ElMessage.success("文件已删除");
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
 
-function resetForm() {
-  Object.assign(form, {
-    name: "",
-    dataType: "text",
-    granularity: "",
-    version: "",
-    fieldsDescription: "",
-    scaleDescription: "",
-    uploadMethod: DEFAULT_UPLOAD_METHOD,
-    sensitivityLevel: "internal",
-    description: "",
-    files: []
-  });
-  publishAfterCreate.value = false;
-  resetCreateInput();
-}
-
-function resetCreateInput() {
-  if (createFileInput.value) {
-    createFileInput.value.value = "";
-  }
-}
-
-function resetAssetInput() {
-  if (assetFileInput.value) {
-    assetFileInput.value.value = "";
-  }
-}
-
-onMounted(loadCatalogs);
+onMounted(loadPage);
 </script>
 
 <template>
-  <section class="surface-card">
-    <div class="card-head">
-      <div>
-        <h3>数据目录</h3>
-        <p>{{ permission.isProvider ? "管理自己发布的目录与目录文件。" : "浏览已发布的数据目录。" }}</p>
-      </div>
-      <div class="head-actions">
-        <el-input v-model="search" placeholder="按名称或版本搜索" clearable style="width: 220px" />
-        <el-button plain @click="loadCatalogs">刷新</el-button>
-        <el-button v-if="permission.can('catalog.create')" type="primary" @click="dialogVisible = true">新建目录</el-button>
-      </div>
-    </div>
-
-    <el-table :data="filteredCatalogs" stripe v-loading="catalogStore.loading">
-      <el-table-column prop="id" label="目录" width="90" />
-      <el-table-column prop="name" label="名称" min-width="220" />
-      <el-table-column prop="dataType" label="类型" width="120" />
-      <el-table-column prop="version" label="版本" width="120" />
-      <el-table-column prop="assetCount" label="文件数" width="100" />
-      <el-table-column prop="uploadMethod" label="上传方式" width="140" />
-      <el-table-column label="敏感级别" width="120">
-        <template #default="{ row }">{{ formatSensitivity(row.sensitivityLevel) }}</template>
-      </el-table-column>
-      <el-table-column label="状态" width="120">
-        <template #default="{ row }"><StatusPill :label="catalogStatusLabels[row.status]" :tone="catalogStatusTones[row.status]" /></template>
-      </el-table-column>
-      <el-table-column prop="createdAt" label="创建时间" min-width="180" />
-      <el-table-column v-if="permission.isProvider" label="操作" width="220" fixed="right">
-        <template #default="{ row }">
-          <el-button type="primary" link @click="openAssetManager(row)">管理文件</el-button>
-          <el-button v-if="row.status === 'draft'" type="primary" link @click="handlePublish(row.id)">发布</el-button>
-          <el-button v-if="row.status !== 'archived'" type="danger" link @click="handleArchive(row.id)">归档</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
-
-    <el-dialog v-model="dialogVisible" title="新建数据目录" width="640px">
-      <el-form :model="form" label-position="top">
-        <div class="form-grid">
-          <el-form-item label="目录名称"><el-input v-model="form.name" /></el-form-item>
-          <el-form-item label="数据类型">
-            <el-select v-model="form.dataType">
-              <el-option label="text" value="text" />
-              <el-option label="table" value="table" />
-              <el-option label="image" value="image" />
-            </el-select>
-          </el-form-item>
-        </div>
-        <div class="form-grid">
-          <el-form-item label="粒度说明"><el-input v-model="form.granularity" /></el-form-item>
-          <el-form-item label="版本"><el-input v-model="form.version" /></el-form-item>
-        </div>
-        <el-form-item label="字段说明"><el-input v-model="form.fieldsDescription" type="textarea" :rows="2" /></el-form-item>
-        <div class="form-grid">
-          <el-form-item label="规模说明"><el-input v-model="form.scaleDescription" /></el-form-item>
-          <el-form-item label="上传方式">
-            <el-select v-model="form.uploadMethod" filterable allow-create default-first-option placeholder="请选择或输入上传方式">
-              <el-option v-for="item in uploadMethodOptions" :key="item" :label="item" :value="item" />
-            </el-select>
-          </el-form-item>
-        </div>
-        <el-form-item label="敏感级别">
-          <el-select v-model="form.sensitivityLevel">
-            <el-option label="公开" value="public" />
-            <el-option label="内部" value="internal" />
-            <el-option label="敏感" value="sensitive" />
+  <div>
+    <MasterDetail :has-selection="selected !== null || creating" empty-title="选择一个目录" empty-description="从左侧选择目录以查看详情，或点击新建。">
+      <template #list>
+        <div class="list-header">
+          <el-input v-model="searchQuery" placeholder="搜索目录..." size="small" clearable />
+          <el-select v-model="statusFilter" placeholder="状态" size="small" clearable style="width: 110px">
+            <el-option label="草稿" value="draft" />
+            <el-option label="已发布" value="published" />
+            <el-option label="已归档" value="archived" />
           </el-select>
-        </el-form-item>
-        <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item label="数据文件">
-          <input ref="createFileInput" type="file" multiple @change="handleCreateFiles" />
-          <p class="file-note">创建目录时至少上传一个文件，支持一次选择多个文件。</p>
-          <ul class="file-list"><li v-for="file in form.files" :key="file.name">{{ file.name }}</li></ul>
-        </el-form-item>
-        <el-checkbox v-model="publishAfterCreate">创建后立即发布</el-checkbox>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="form.files.length === 0" @click="handleCreate">提交</el-button>
+          <el-button v-if="permission.isProvider.value" type="primary" size="small" @click="startCreating">+ 新建</el-button>
+        </div>
+        <ItemCard v-for="c in filteredCatalogs" :key="c.id" :selected="selectedId === c.id" @click="selectItem(c.id)">
+          <div class="item-title">{{ c.name }} <span class="item-version">{{ c.version }}</span></div>
+          <div class="item-meta">
+            <StatusBadge :label="catalogStatusLabels[c.status]" :tone="toneBadge[c.status]" />
+            <span>{{ c.assetCount ?? 0 }} 个文件</span>
+          </div>
+        </ItemCard>
+        <div v-if="filteredCatalogs.length === 0" class="list-empty">暂无目录</div>
       </template>
-    </el-dialog>
 
-    <el-dialog v-model="assetsDialogVisible" title="目录文件管理" width="680px">
-      <div v-if="currentCatalog" class="asset-dialog">
-        <p>当前目录：{{ currentCatalog.name }}，共 {{ currentCatalog.assetCount }} 个文件。</p>
-        <input ref="assetFileInput" type="file" multiple @change="handleAssetFiles" />
-        <ul class="file-list"><li v-for="file in pendingAssetFiles" :key="file.name">{{ file.name }}</li></ul>
-        <el-button type="primary" :disabled="pendingAssetFiles.length === 0" @click="handleAppendAssets">追加上传</el-button>
-        <ul class="asset-list">
-          <li v-for="asset in currentAssets" :key="asset.id" class="asset-row">
-            <div>
-              <strong>{{ asset.fileName }}</strong>
-              <p>{{ asset.fileType }} · {{ asset.fileSize }} bytes</p>
+      <template #detail>
+        <!-- Creating Mode -->
+        <InlineForm v-if="creating" title="新建数据目录" :loading="submitting" @submit="handleCreate" @cancel="cancelCreating">
+          <el-form label-position="top">
+            <el-form-item label="目录名称"><el-input v-model="createForm.name" /></el-form-item>
+            <div class="form-row">
+              <el-form-item label="数据类型"><el-input v-model="createForm.dataType" /></el-form-item>
+              <el-form-item label="版本"><el-input v-model="createForm.version" /></el-form-item>
             </div>
-            <el-button type="danger" link @click="handleRemoveAsset(asset.id)">删除</el-button>
-          </li>
-        </ul>
-      </div>
-    </el-dialog>
-  </section>
+            <div class="form-row">
+              <el-form-item label="粒度"><el-input v-model="createForm.granularity" /></el-form-item>
+              <el-form-item label="敏感级别">
+                <el-select v-model="createForm.sensitivityLevel"><el-option label="公开" value="public" /><el-option label="内部" value="internal" /><el-option label="敏感" value="sensitive" /></el-select>
+              </el-form-item>
+            </div>
+            <el-form-item label="字段说明"><el-input v-model="createForm.fieldsDescription" type="textarea" :rows="2" /></el-form-item>
+            <el-form-item label="规模描述"><el-input v-model="createForm.scaleDescription" /></el-form-item>
+            <el-form-item label="描述"><el-input v-model="createForm.description" type="textarea" :rows="2" /></el-form-item>
+          </el-form>
+        </InlineForm>
+
+        <!-- Viewing Mode -->
+        <DetailPanel v-else-if="selected">
+          <template #header>
+            <div class="detail-head">
+              <div>
+                <h3 class="detail-title">{{ selected.name }} <span class="item-version">{{ selected.version }}</span></h3>
+                <StatusBadge :label="catalogStatusLabels[selected.status]" :tone="toneBadge[selected.status]" />
+              </div>
+              <div v-if="permission.isProvider.value" class="detail-actions">
+                <el-button v-if="selected.status === 'draft'" type="primary" size="small" @click="handlePublish">发布</el-button>
+                <el-button v-if="selected.status === 'published'" size="small" @click="handleArchive">归档</el-button>
+              </div>
+            </div>
+          </template>
+
+          <div class="detail-section">
+            <h5 class="section-title">基本信息</h5>
+            <div class="info-grid">
+              <div><label>数据类型</label><span>{{ selected.dataType }}</span></div>
+              <div><label>粒度</label><span>{{ selected.granularity }}</span></div>
+              <div><label>敏感级别</label><span>{{ selected.sensitivityLevel }}</span></div>
+              <div><label>上传方式</label><span>{{ selected.uploadMethod }}</span></div>
+            </div>
+            <p v-if="selected.description" class="detail-desc">{{ selected.description }}</p>
+          </div>
+
+          <div class="detail-section">
+            <h5 class="section-title">文件列表（{{ fileItems.length }}）</h5>
+            <FileList
+              :files="fileItems"
+              :editable="permission.isProvider.value && selected.status === 'draft'"
+              @upload="handleUploadFiles"
+              @delete="handleDeleteFile"
+              @preview="(f) => previewAsset = assets.find((a) => a.id === f.id) ?? null"
+            />
+          </div>
+
+          <SharedFilePreviewPanel v-if="previewAsset" :asset="previewAsset" title="文件预览" />
+        </DetailPanel>
+      </template>
+    </MasterDetail>
+  </div>
 </template>
 
 <style scoped>
-.head-actions,
-.form-grid,
-.asset-row {
-  display: flex;
-  gap: 12px;
-}
-
-.form-grid > * {
-  flex: 1;
-}
-
-.file-note,
-.asset-row p {
-  color: var(--text-soft);
-}
-
-.file-list,
-.asset-list {
-  padding-left: 18px;
-}
-
-.asset-dialog {
-  display: grid;
-  gap: 12px;
-}
-
-.asset-row {
-  align-items: center;
-  justify-content: space-between;
-}
+.list-header { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-3); align-items: center; }
+.list-empty { padding: var(--sp-6); text-align: center; color: var(--text-tertiary); font-size: var(--text-sm); }
+.item-title { font-weight: var(--weight-medium); font-size: var(--text-sm); color: var(--text-primary); }
+.item-version { color: var(--text-tertiary); font-weight: var(--weight-normal); }
+.item-meta { display: flex; align-items: center; gap: var(--sp-2); margin-top: 4px; font-size: var(--text-xs); color: var(--text-tertiary); }
+.detail-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.detail-head > div:first-child { display: flex; flex-direction: column; gap: var(--sp-2); }
+.detail-title { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.detail-actions { display: flex; gap: var(--sp-2); }
+.detail-section { margin-bottom: var(--sp-5); }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.info-grid div { display: flex; flex-direction: column; gap: 2px; }
+.info-grid label { font-size: var(--text-xs); color: var(--text-tertiary); font-weight: var(--weight-medium); }
+.info-grid span { font-size: var(--text-sm); color: var(--text-primary); }
+.detail-desc { font-size: var(--text-sm); color: var(--text-secondary); line-height: var(--leading-relaxed); margin: var(--sp-3) 0 0; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
 </style>

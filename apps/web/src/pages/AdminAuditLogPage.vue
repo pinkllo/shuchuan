@@ -4,49 +4,58 @@ import { ElMessage } from "element-plus";
 
 import { fetchAuditLogs } from "@/api/admin";
 import { getErrorMessage } from "@/api/http";
+import AppTimeline from "@/components/AppTimeline.vue";
+import type { TimelineItem } from "@/components/AppTimeline.vue";
 import { useSessionStore } from "@/stores/session";
 import type { AuditLogItem } from "@/types/auth";
 
 const sessionStore = useSessionStore();
-const loading = ref(false);
 const logs = ref<AuditLogItem[]>([]);
+const loading = ref(false);
+
+const timelineItems = ref<TimelineItem[]>([]);
+
+function mapLogToTimeline(log: AuditLogItem): TimelineItem {
+  return {
+    time: log.createdAt,
+    content: `[${log.action}] ${log.targetType}${log.targetId ? ` #${log.targetId}` : ''}${log.detail ? ` — ${log.detail}` : ''}`,
+    type: log.action.includes('delete') || log.action.includes('disable') ? 'danger'
+      : log.action.includes('approve') || log.action.includes('create') ? 'success'
+      : 'default'
+  };
+}
 
 async function loadLogs() {
   const token = sessionStore.accessToken;
-  if (!token) {
-    return;
-  }
+  if (!token) return;
   loading.value = true;
   try {
     logs.value = await fetchAuditLogs(token);
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  } finally {
-    loading.value = false;
-  }
+    timelineItems.value = logs.value.map(mapLogToTimeline);
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
+  finally { loading.value = false; }
 }
 
 onMounted(loadLogs);
 </script>
 
 <template>
-  <section class="surface-card">
-    <div class="card-head">
+  <div>
+    <div class="page-head">
       <div>
-        <h3>审计日志</h3>
-        <p>记录注册审核、目录发布、需求审批、文件上传、任务推进和交付下载。</p>
+        <h2 class="page-title">审计日志</h2>
+        <p class="page-desc">查看平台关键操作的审计记录。</p>
       </div>
-      <el-button plain @click="loadLogs">刷新</el-button>
+      <el-button plain size="small" @click="loadLogs">刷新</el-button>
     </div>
-
-    <el-table :data="logs" stripe v-loading="loading">
-      <el-table-column prop="id" label="日志" width="90" />
-      <el-table-column prop="action" label="动作" min-width="180" />
-      <el-table-column prop="targetType" label="对象类型" width="140" />
-      <el-table-column prop="targetId" label="对象 ID" width="110" />
-      <el-table-column prop="actorId" label="操作者" width="110" />
-      <el-table-column prop="detail" label="详情" min-width="220" />
-      <el-table-column prop="createdAt" label="时间" min-width="200" />
-    </el-table>
-  </section>
+    <section class="surface-card" v-loading="loading">
+      <AppTimeline :items="timelineItems" />
+    </section>
+  </div>
 </template>
+
+<style scoped>
+.page-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--sp-4); }
+.page-title { margin: 0 0 var(--sp-1); font-size: var(--text-xl); font-weight: var(--weight-semibold); color: var(--text-primary); }
+.page-desc { margin: 0; font-size: var(--text-sm); color: var(--text-secondary); }
+</style>

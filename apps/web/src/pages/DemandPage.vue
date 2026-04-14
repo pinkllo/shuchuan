@@ -3,318 +3,190 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 
 import { getErrorMessage } from "@/api/http";
-import SharedFilePreviewPanel from "@/components/SharedFilePreviewPanel.vue";
-import StatusPill from "@/components/StatusPill.vue";
+import MasterDetail from "@/components/MasterDetail.vue";
+import ItemCard from "@/components/ItemCard.vue";
+import DetailPanel from "@/components/DetailPanel.vue";
+import InlineForm from "@/components/InlineForm.vue";
+import StatusBadge from "@/components/StatusBadge.vue";
 import { usePermission } from "@/composables/usePermission";
 import { useCatalogStore } from "@/stores/catalogStore";
 import { useDemandStore } from "@/stores/demandStore";
 import { useSessionStore } from "@/stores/session";
-import { demandStatusLabels, demandStatusTones, type DemandCreatePayload, type DemandItem } from "@/types/demand";
-import { formatCatalogAssetFileSize } from "@/utils/catalogAssetPreview";
-import { buildCatalogOptionLabel, findCatalogById } from "@/utils/catalogPresentation";
+import type { DemandItem, DemandStatus } from "@/types/demand";
+import { demandStatusLabels } from "@/types/demand";
 
 const sessionStore = useSessionStore();
-const permission = usePermission();
-const catalogStore = useCatalogStore();
 const demandStore = useDemandStore();
+const catalogStore = useCatalogStore();
+const permission = usePermission();
 
-const createDialog = ref(false);
-const reviewDialog = ref(false);
-const assetsDialog = ref(false);
-const currentDemand = ref<DemandItem | null>(null);
-const previewAssetId = ref<number | null>(null);
+const selectedId = ref<number | null>(null);
+const creating = ref(false);
+const submitting = ref(false);
+const approveNote = ref("");
 
-const createForm = reactive<DemandCreatePayload>({
-  catalogId: 0,
-  title: "",
-  purpose: "",
-  deliveryPlan: ""
-});
-const reviewNote = ref("");
+const createForm = reactive({ catalogId: 0, title: "", purpose: "", deliveryPlan: "" });
 
-const selectedCatalog = computed(() => findCatalogById(catalogStore.publishedItems, createForm.catalogId));
-const currentCatalog = computed(() => {
-  if (!currentDemand.value) {
-    return null;
-  }
-  return findCatalogById(catalogStore.items, currentDemand.value.catalogId);
-});
-const currentAssets = computed(() => {
-  if (!currentDemand.value) {
-    return [];
-  }
-  return catalogStore.assetsForCatalog(currentDemand.value.catalogId);
-});
-const previewAsset = computed(() => {
-  if (!previewAssetId.value) {
-    return null;
-  }
-  return currentAssets.value.find((item) => item.id === previewAssetId.value) ?? null;
-});
+const toneBadge: Record<DemandStatus, 'success' | 'warning' | 'danger' | 'info' | 'muted'> = {
+  pending_approval: "warning", approved: "info", rejected: "danger",
+  data_uploaded: "info", processing: "info", delivered: "success"
+};
+
+const statusGroups: { key: DemandStatus[]; label: string }[] = [
+  { key: ["pending_approval"], label: "待审批" },
+  { key: ["approved", "data_uploaded"], label: "已获批" },
+  { key: ["processing"], label: "处理中" },
+  { key: ["delivered"], label: "已交付" },
+  { key: ["rejected"], label: "已驳回" },
+];
+
+const groupedDemands = computed(() =>
+  statusGroups.map((g) => ({
+    label: g.label,
+    items: demandStore.items.filter((d) => g.key.includes(d.status)),
+  })).filter((g) => g.items.length > 0)
+);
+
+const selected = computed(() => demandStore.items.find((d) => d.id === selectedId.value) ?? null);
+const selectedCatalog = computed(() => selected.value ? catalogStore.items.find((c) => c.id === selected.value!.catalogId) ?? null : null);
 
 async function loadPage() {
   const token = sessionStore.accessToken;
-  if (!token) {
-    return;
-  }
+  if (!token) return;
   try {
     await Promise.all([
       demandStore.loadAll(token),
-      permission.isProvider.value ? catalogStore.loadMine(token) : catalogStore.loadPublished(token)
+      permission.isAggregator.value ? catalogStore.loadPublished(token) : catalogStore.loadMine(token)
     ]);
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
+}
+
+function selectItem(id: number) { creating.value = false; selectedId.value = id; }
+
+function startCreating() {
+  selectedId.value = null; creating.value = true;
+  Object.assign(createForm, { catalogId: 0, title: "", purpose: "", deliveryPlan: "" });
 }
 
 async function handleCreate() {
   const token = sessionStore.accessToken;
-  if (!token) {
-    return;
-  }
+  if (!token) return;
+  submitting.value = true;
   try {
-    await demandStore.submit(createForm, token);
-    createDialog.value = false;
-    Object.assign(createForm, { catalogId: 0, title: "", purpose: "", deliveryPlan: "" });
-    ElMessage.success("目录需求已提交");
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
+    const demand = await demandStore.submit(createForm, token);
+    creating.value = false; selectedId.value = demand.id;
+    ElMessage.success("需求已创建");
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
+  finally { submitting.value = false; }
 }
 
 async function handleApprove() {
   const token = sessionStore.accessToken;
-  if (!token || !currentDemand.value) {
-    return;
-  }
+  if (!token || !selected.value) return;
   try {
-    await demandStore.approve(currentDemand.value.id, reviewNote.value, token);
-    reviewDialog.value = false;
-    reviewNote.value = "";
+    await demandStore.approve(selected.value.id, approveNote.value, token);
+    approveNote.value = "";
     ElMessage.success("需求已审批");
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
-}
-
-async function openAssets(item: DemandItem) {
-  const token = sessionStore.accessToken;
-  if (!token) {
-    return;
-  }
-  currentDemand.value = item;
-  try {
-    const assets = await catalogStore.loadAssets(item.catalogId, token);
-    previewAssetId.value = assets[0]?.id ?? null;
-    assetsDialog.value = true;
-  } catch (error) {
-    ElMessage.error(getErrorMessage(error));
-  }
-}
-
-function openReview(item: DemandItem) {
-  currentDemand.value = item;
-  reviewNote.value = "";
-  reviewDialog.value = true;
-}
-
-function selectPreviewAsset(assetId: number) {
-  previewAssetId.value = assetId;
-}
-
-function resolveCatalog(catalogId: number) {
-  return findCatalogById(catalogStore.items, catalogId);
+  } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
 
 onMounted(loadPage);
 </script>
 
 <template>
-  <section class="surface-card">
-    <div class="card-head">
-      <div>
-        <h3>需求协同</h3>
-        <p>{{ permission.isProvider ? "审批按目录发起的需求。" : "按目录发起需求并查看审批结果。" }}</p>
-      </div>
-      <div class="head-actions">
-        <el-button plain @click="loadPage">刷新</el-button>
-        <el-button v-if="permission.isAggregator" type="primary" @click="createDialog = true">发起需求</el-button>
-      </div>
-    </div>
-
-    <el-table :data="demandStore.items" stripe v-loading="demandStore.loading">
-      <el-table-column prop="id" label="需求" width="90" />
-      <el-table-column prop="title" label="标题" min-width="220" />
-      <el-table-column label="申请目录" min-width="300">
-        <template #default="{ row }">
-          <div class="context-block">
-            <strong>{{ resolveCatalog(row.catalogId)?.name ?? `目录 #${row.catalogId}` }}</strong>
-            <small v-if="resolveCatalog(row.catalogId)">
-              {{ resolveCatalog(row.catalogId)?.version }} · {{ resolveCatalog(row.catalogId)?.dataType }} ·
-              {{ resolveCatalog(row.catalogId)?.granularity }} · {{ resolveCatalog(row.catalogId)?.assetCount }} 个文件
-            </small>
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="120">
-        <template #default="{ row }">
-          <StatusPill :label="demandStatusLabels[row.status]" :tone="demandStatusTones[row.status]" />
-        </template>
-      </el-table-column>
-      <el-table-column prop="approvalNote" label="审批意见" min-width="200" />
-      <el-table-column label="操作" width="220" fixed="right">
-        <template #default="{ row }">
-          <el-button v-if="row.status === 'pending_approval' && permission.isProvider" type="primary" link @click="openReview(row)">审批</el-button>
-          <el-button
-            v-if="['approved', 'data_uploaded', 'processing', 'delivered'].includes(row.status)"
-            type="primary"
-            link
-            @click="openAssets(row)"
-          >
-            查看目录文件
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
-
-    <el-dialog v-model="createDialog" title="按目录发起需求" width="620px">
-      <el-form :model="createForm" label-position="top">
-        <el-form-item label="选择目录">
-          <el-select v-model="createForm.catalogId" filterable placeholder="请选择要申请使用的目录">
-            <el-option
-              v-for="item in catalogStore.publishedItems"
-              :key="item.id"
-              :label="buildCatalogOptionLabel(item)"
-              :value="item.id"
-            />
-          </el-select>
-          <p v-if="catalogStore.publishedItems.length === 0" class="helper-text">
-            当前没有可选的已发布目录，请先由数据提供者发布目录。
-          </p>
-          <p class="helper-text">申请的是整个目录，处理阶段再勾选目录下的具体文件。</p>
-        </el-form-item>
-        <div v-if="selectedCatalog" class="summary-card">
-          <strong>{{ selectedCatalog.name }}</strong>
-          <div class="summary-card__meta">
-            <span>版本：{{ selectedCatalog.version }}</span>
-            <span>类型：{{ selectedCatalog.dataType }}</span>
-            <span>粒度：{{ selectedCatalog.granularity }}</span>
-            <span>文件数：{{ selectedCatalog.assetCount }}</span>
-            <span>敏感级别：{{ selectedCatalog.sensitivityLevel }}</span>
-          </div>
-          <p>{{ selectedCatalog.description }}</p>
-          <small>字段：{{ selectedCatalog.fieldsDescription }}；规模：{{ selectedCatalog.scaleDescription }}</small>
+  <div>
+    <MasterDetail :has-selection="selected !== null || creating" empty-title="选择一个需求" empty-description="从左侧选择需求以查看详情。">
+      <template #list>
+        <div class="list-header">
+          <span class="list-title">需求列表</span>
+          <el-button v-if="permission.isAggregator.value" type="primary" size="small" @click="startCreating">+ 新建</el-button>
         </div>
-        <el-form-item label="需求标题">
-          <el-input v-model="createForm.title" />
-        </el-form-item>
-        <el-form-item label="用途说明">
-          <el-input v-model="createForm.purpose" type="textarea" :rows="3" />
-        </el-form-item>
-        <el-form-item label="交付计划">
-          <el-input v-model="createForm.deliveryPlan" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="createDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleCreate">提交</el-button>
+        <template v-for="group in groupedDemands" :key="group.label">
+          <div class="group-label">{{ group.label }} ({{ group.items.length }})</div>
+          <ItemCard v-for="d in group.items" :key="d.id" :selected="selectedId === d.id" @click="selectItem(d.id)">
+            <div class="item-title">{{ d.title }}</div>
+            <div class="item-meta">
+              <StatusBadge :label="demandStatusLabels[d.status]" :tone="toneBadge[d.status]" />
+              <span>需求 #{{ d.id }}</span>
+            </div>
+          </ItemCard>
+        </template>
+        <div v-if="groupedDemands.length === 0" class="list-empty">暂无需求</div>
       </template>
-    </el-dialog>
 
-    <el-dialog v-model="reviewDialog" title="审批需求" width="520px">
-      <el-input v-model="reviewNote" type="textarea" :rows="4" placeholder="请输入审批意见" />
-      <template #footer>
-        <el-button @click="reviewDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleApprove">通过</el-button>
+      <template #detail>
+        <InlineForm v-if="creating" title="新建需求" :loading="submitting" @submit="handleCreate" @cancel="creating = false">
+          <el-form label-position="top">
+            <el-form-item label="目录">
+              <el-select v-model="createForm.catalogId" filterable placeholder="选择数据目录">
+                <el-option v-for="c in catalogStore.publishedItems" :key="c.id" :label="`${c.name} ${c.version}`" :value="c.id" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="需求标题"><el-input v-model="createForm.title" /></el-form-item>
+            <el-form-item label="用途"><el-input v-model="createForm.purpose" type="textarea" :rows="2" /></el-form-item>
+            <el-form-item label="交付计划"><el-input v-model="createForm.deliveryPlan" /></el-form-item>
+          </el-form>
+        </InlineForm>
+
+        <DetailPanel v-else-if="selected">
+          <template #header>
+            <div class="detail-head">
+              <div>
+                <h3 class="detail-title">{{ selected.title }}</h3>
+                <StatusBadge :label="demandStatusLabels[selected.status]" :tone="toneBadge[selected.status]" />
+              </div>
+            </div>
+          </template>
+
+          <div class="detail-section">
+            <h5 class="section-title">需求信息</h5>
+            <div class="info-grid">
+              <div><label>用途</label><span>{{ selected.purpose }}</span></div>
+              <div><label>交付计划</label><span>{{ selected.deliveryPlan }}</span></div>
+            </div>
+          </div>
+
+          <div v-if="selectedCatalog" class="detail-section">
+            <h5 class="section-title">关联目录</h5>
+            <div class="info-grid">
+              <div><label>名称</label><span>{{ selectedCatalog.name }} {{ selectedCatalog.version }}</span></div>
+              <div><label>数据类型</label><span>{{ selectedCatalog.dataType }}</span></div>
+              <div><label>文件数</label><span>{{ selectedCatalog.assetCount }} 个</span></div>
+              <div><label>状态</label><span>{{ selectedCatalog.status }}</span></div>
+            </div>
+          </div>
+
+          <div v-if="selected.approvalNote" class="detail-section">
+            <h5 class="section-title">审批备注</h5>
+            <p class="detail-desc">{{ selected.approvalNote }}</p>
+          </div>
+
+          <template #actions>
+            <template v-if="permission.isProvider.value && selected.status === 'pending_approval'">
+              <el-input v-model="approveNote" placeholder="审批备注（可选）" size="small" style="flex:1" />
+              <el-button type="primary" size="small" @click="handleApprove">审批通过</el-button>
+            </template>
+          </template>
+        </DetailPanel>
       </template>
-    </el-dialog>
-
-    <el-dialog v-model="assetsDialog" title="目录文件" width="980px">
-      <div v-if="currentDemand && currentCatalog" class="summary-card summary-card--compact">
-        <strong>{{ currentDemand.title }}</strong>
-        <div class="summary-card__meta">
-          <span>目录：{{ currentCatalog.name }}</span>
-          <span>版本：{{ currentCatalog.version }}</span>
-          <span>类型：{{ currentCatalog.dataType }}</span>
-          <span>粒度：{{ currentCatalog.granularity }}</span>
-        </div>
-      </div>
-      <div class="preview-layout">
-        <el-table :data="currentAssets" stripe>
-          <el-table-column prop="fileName" label="文件名" min-width="220" />
-          <el-table-column prop="fileType" label="类型" width="160" />
-          <el-table-column label="大小" width="120">
-            <template #default="{ row }">
-              {{ formatCatalogAssetFileSize(row.fileSize) }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="uploadedAt" label="上传时间" min-width="180" />
-          <el-table-column label="操作" width="100" fixed="right">
-            <template #default="{ row }">
-              <el-button type="primary" link @click="selectPreviewAsset(row.id)">预览</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-        <SharedFilePreviewPanel :asset="previewAsset" title="目录文件预览" />
-      </div>
-    </el-dialog>
-  </section>
+    </MasterDetail>
+  </div>
 </template>
 
 <style scoped>
-.head-actions,
-.summary-card__meta,
-.preview-layout {
-  display: flex;
-  gap: 12px;
-}
-
-.helper-text,
-.context-block small {
-  color: var(--text-soft);
-}
-
-.helper-text {
-  margin: 8px 0 0;
-}
-
-.context-block,
-.summary-card {
-  display: grid;
-  gap: 6px;
-}
-
-.context-block strong,
-.summary-card strong,
-.summary-card p,
-.summary-card small {
-  margin: 0;
-}
-
-.summary-card {
-  margin-bottom: 16px;
-  padding: 16px;
-  border-radius: 18px;
-  background: var(--surface-strong);
-  border: 1px solid var(--border-soft);
-}
-
-.summary-card__meta {
-  flex-wrap: wrap;
-  color: var(--text-soft);
-  font-size: 13px;
-}
-
-.summary-card--compact {
-  margin-bottom: 12px;
-}
-
-.preview-layout {
-  align-items: flex-start;
-}
-
-.preview-layout > * {
-  flex: 1;
-  min-width: 0;
-}
+.list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--sp-3); }
+.list-title { font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--text-secondary); }
+.list-empty { padding: var(--sp-6); text-align: center; color: var(--text-tertiary); font-size: var(--text-sm); }
+.group-label { font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; padding: var(--sp-2) var(--sp-1); margin-top: var(--sp-2); }
+.item-title { font-weight: var(--weight-medium); font-size: var(--text-sm); color: var(--text-primary); }
+.item-meta { display: flex; align-items: center; gap: var(--sp-2); margin-top: 4px; font-size: var(--text-xs); color: var(--text-tertiary); }
+.detail-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.detail-head > div:first-child { display: flex; flex-direction: column; gap: var(--sp-2); }
+.detail-title { margin: 0; font-size: var(--text-lg); font-weight: var(--weight-semibold); }
+.detail-section { margin-bottom: var(--sp-5); }
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.info-grid div { display: flex; flex-direction: column; gap: 2px; }
+.info-grid label { font-size: var(--text-xs); color: var(--text-tertiary); font-weight: var(--weight-medium); }
+.info-grid span { font-size: var(--text-sm); color: var(--text-primary); }
+.detail-desc { font-size: var(--text-sm); color: var(--text-secondary); line-height: var(--leading-relaxed); margin: 0; }
 </style>
