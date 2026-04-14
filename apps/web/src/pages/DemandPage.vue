@@ -9,7 +9,7 @@ import DetailPanel from "@/components/DetailPanel.vue";
 import InlineForm from "@/components/InlineForm.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
 import FileList from "@/components/FileList.vue";
-import type { FileItem } from "@/components/FileList.vue";
+import type { FileItem } from "@/types/file";
 import SharedFilePreviewPanel from "@/components/SharedFilePreviewPanel.vue";
 import { usePermission } from "@/composables/usePermission";
 import { useCatalogStore } from "@/stores/catalogStore";
