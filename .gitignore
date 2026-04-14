@@ -10,3 +10,4 @@ apps/api/**/*.pyc
 apps/api/*.egg-info/
 uploads/
 .worktrees/
+/.agent/
