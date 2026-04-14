@@ -1,14 +1,21 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createTask } from "@/api/tasks";
+import { createTask, fetchTasks } from "@/api/tasks";
+
+const fetchMock = vi.fn<typeof fetch>();
 
 describe("tasks api", () => {
+  beforeEach(() => {
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("submits multiple input asset ids when creating a task", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
+    fetchMock.mockResolvedValue(
       new Response(
         JSON.stringify({
           id: 9,
@@ -50,5 +57,36 @@ describe("tasks api", () => {
 
     expect(payload.input_asset_ids).toEqual([11, 12]);
     expect(task.inputAssetIds).toEqual([11, 12]);
+  });
+
+  it("maps processor metadata from backend tasks", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          {
+            id: 9,
+            demand_id: 3,
+            input_asset_ids: [11, 12],
+            created_by: 5,
+            processor_id: 7,
+            processor_name: "拆书服务",
+            task_type: "book_split",
+            status: "running",
+            progress: 25,
+            note: "正在拆分",
+            created_at: "2026-04-12T00:00:00Z"
+          }
+        ]),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        }
+      )
+    );
+
+    const tasks = await fetchTasks("token-123");
+
+    expect(tasks[0]?.processorId).toBe(7);
+    expect(tasks[0]?.processorName).toBe("拆书服务");
   });
 });

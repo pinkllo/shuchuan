@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session, selectinload
 from app.db.models.demand import Demand, DemandStatus
 from app.db.models.task import ProcessingTask, TaskArtifact, TaskInputAsset, TaskStatus
 from app.schemas.delivery import DeliveryRead
+from app.services.dispatch_service import try_dispatch
 from app.services.file_storage import ensure_existing_upload
 from app.services.operation_log_service import log_operation
+from app.services.processor_service import get_dispatch_processor
 
 ALLOWED_TRANSITIONS = {
     TaskStatus.QUEUED: {TaskStatus.RUNNING},
@@ -25,6 +27,7 @@ def create_processing_task(db: Session, *, payload, creator_id: int) -> Processi
     demand = db.get(Demand, payload.demand_id)
     _ensure_task_access(demand, creator_id=creator_id)
     _ensure_demand_ready(demand)
+    processor = get_dispatch_processor(db, task_type=payload.task_type)
     asset_ids = _validate_catalog_assets(
         db,
         catalog_id=demand.catalog_id,
@@ -42,6 +45,13 @@ def create_processing_task(db: Session, *, payload, creator_id: int) -> Processi
     db.flush()
     for asset_id in asset_ids:
         db.add(TaskInputAsset(task_id=task.id, catalog_asset_id=asset_id))
+    if processor is not None:
+        try_dispatch(
+            db,
+            task=task,
+            input_asset_ids=asset_ids,
+            processor=processor,
+        )
     db.commit()
     db.refresh(task)
     return task
@@ -50,7 +60,10 @@ def create_processing_task(db: Session, *, payload, creator_id: int) -> Processi
 def list_tasks_for_creator(db: Session, *, creator_id: int) -> list[ProcessingTask]:
     return (
         db.query(ProcessingTask)
-        .options(selectinload(ProcessingTask.input_assets))
+        .options(
+            selectinload(ProcessingTask.input_assets),
+            selectinload(ProcessingTask.processor),
+        )
         .filter(ProcessingTask.created_by == creator_id)
         .order_by(ProcessingTask.id.desc())
         .all()

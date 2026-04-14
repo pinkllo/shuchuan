@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
 import { getErrorMessage } from "@/api/http";
+import { fetchOnlineProcessors } from "@/api/processors";
 import SharedFilePreviewPanel from "@/components/SharedFilePreviewPanel.vue";
 import StatusPill from "@/components/StatusPill.vue";
 import { useCapabilityStore } from "@/stores/capabilityStore";
@@ -10,9 +11,13 @@ import { useCatalogStore } from "@/stores/catalogStore";
 import { useDemandStore } from "@/stores/demandStore";
 import { useSessionStore } from "@/stores/session";
 import { useTaskStore } from "@/stores/taskStore";
+import type { Processor } from "@/types/processor";
 import { taskStatusLabels, taskStatusTones, type TaskStatus } from "@/types/task";
 import { formatCatalogAssetFileSize } from "@/utils/catalogAssetPreview";
 import { buildCatalogAssetOptionLabel, buildDemandOptionLabel, findCatalogById } from "@/utils/catalogPresentation";
+
+const MANUAL_OPTION_VALUE = "__manual__";
+const MANUAL_TASK_TYPE = "instruction";
 
 const sessionStore = useSessionStore();
 const capabilityStore = useCapabilityStore();
@@ -27,11 +32,12 @@ const currentTaskId = ref<number | null>(null);
 const nextStatus = ref<TaskStatus>("running");
 const statusNote = ref("");
 const previewAssetId = ref<number | null>(null);
+const onlineProcessors = ref<Processor[]>([]);
 
 const createForm = reactive({
   demandId: 0,
   inputAssetIds: [] as number[],
-  taskType: "instruction",
+  taskType: MANUAL_OPTION_VALUE,
   model: "Qwen-2.5-72B",
   promptTemplate: "标准问答模板",
   batchSize: "32"
@@ -43,15 +49,40 @@ const selectedDemand = computed(() => demandStore.items.find((item) => item.id =
 const selectedCatalog = computed(() => selectedDemand.value ? findCatalogById(catalogStore.items, selectedDemand.value.catalogId) : null);
 const availableAssets = computed(() => selectedDemand.value ? catalogStore.assetsForCatalog(selectedDemand.value.catalogId) : []);
 const previewAsset = computed(() => availableAssets.value.find((item) => item.id === previewAssetId.value) ?? null);
+const isManualMode = computed(() => createForm.taskType === MANUAL_OPTION_VALUE);
+const taskTypeOptions = computed(() => [
+  {
+    value: MANUAL_OPTION_VALUE,
+    label: "手动处理（自定义）",
+    description: "保持现有手动任务登记与人工推进模式。"
+  },
+  ...onlineProcessors.value.map((processor) => ({
+    value: processor.taskType,
+    label: `自动 · ${processor.name}`,
+    description: processor.description || processor.taskType
+  }))
+]);
+const selectedTaskTypeDescription = computed(
+  () => taskTypeOptions.value.find((item) => item.value === createForm.taskType)?.description ?? ""
+);
 
 async function loadPage() {
   const token = sessionStore.accessToken;
   if (!token) return;
   try {
-    await Promise.all([demandStore.loadAll(token), taskStore.loadAll(token), catalogStore.loadPublished(token)]);
+    await Promise.all([
+      demandStore.loadAll(token),
+      taskStore.loadAll(token),
+      catalogStore.loadPublished(token),
+      loadProcessors(token)
+    ]);
   } catch (error) {
     ElMessage.error(getErrorMessage(error));
   }
+}
+
+async function loadProcessors(token: string) {
+  onlineProcessors.value = await fetchOnlineProcessors(token);
 }
 
 watch(() => createForm.demandId, async (demandId) => {
@@ -76,7 +107,7 @@ async function handleCreateTask() {
     await taskStore.submit({
       demandId: createForm.demandId,
       inputAssetIds: createForm.inputAssetIds,
-      taskType: createForm.taskType,
+      taskType: isManualMode.value ? MANUAL_TASK_TYPE : createForm.taskType,
       config: { model: createForm.model, promptTemplate: createForm.promptTemplate, batchSize: createForm.batchSize }
     }, token);
     closeCreateDialog();
@@ -90,6 +121,7 @@ function openCreateDialog() {
   createDialog.value = true;
   createForm.demandId = 0;
   createForm.inputAssetIds = [];
+  createForm.taskType = MANUAL_OPTION_VALUE;
   previewAssetId.value = null;
 }
 
@@ -97,6 +129,7 @@ function closeCreateDialog() {
   createDialog.value = false;
   createForm.demandId = 0;
   createForm.inputAssetIds = [];
+  createForm.taskType = MANUAL_OPTION_VALUE;
   previewAssetId.value = null;
 }
 
@@ -158,6 +191,7 @@ onMounted(loadPage);
         <el-table-column prop="demandId" label="需求" width="90" />
         <el-table-column label="输入文件" width="120"><template #default="{ row }">{{ row.inputAssetIds.length }} 个</template></el-table-column>
         <el-table-column prop="taskType" label="类型" width="120" />
+        <el-table-column label="处理器" width="140"><template #default="{ row }">{{ row.processorName ?? "手动" }}</template></el-table-column>
         <el-table-column label="状态" width="120"><template #default="{ row }"><StatusPill :label="taskStatusLabels[row.status]" :tone="taskStatusTones[row.status]" /></template></el-table-column>
         <el-table-column prop="note" label="备注" min-width="220" />
         <el-table-column label="操作" width="220" fixed="right">
@@ -196,7 +230,8 @@ onMounted(loadPage);
           </article>
         </div>
         <SharedFilePreviewPanel :asset="previewAsset" title="任务输入文件预览" />
-        <el-form-item label="能力"><el-select v-model="createForm.taskType"><el-option v-for="item in capabilityStore.selectableCapabilities" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
+        <el-form-item label="能力"><el-select v-model="createForm.taskType"><el-option v-for="item in taskTypeOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+        <p class="selection-note">{{ selectedTaskTypeDescription }}</p>
         <div class="form-grid"><el-form-item label="模型"><el-input v-model="createForm.model" /></el-form-item><el-form-item label="批次大小"><el-input v-model="createForm.batchSize" /></el-form-item></div>
         <el-form-item label="提示词模板"><el-input v-model="createForm.promptTemplate" /></el-form-item>
       </el-form>

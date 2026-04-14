@@ -9,6 +9,7 @@ describe("filterNavItems", () => {
     expect(names).not.toContain("admin-approvals");
     expect(names).not.toContain("admin-users");
     expect(names).not.toContain("admin-audit-logs");
+    expect(names).not.toContain("admin-processors");
     expect(names).not.toContain("deliveries");
   });
 
@@ -18,6 +19,7 @@ describe("filterNavItems", () => {
     expect(names).toContain("admin-approvals");
     expect(names).toContain("admin-users");
     expect(names).toContain("admin-audit-logs");
+    expect(names).toContain("admin-processors");
     expect(names).not.toContain("deliveries");
   });
 });

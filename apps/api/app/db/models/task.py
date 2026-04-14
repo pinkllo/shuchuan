@@ -1,10 +1,14 @@
 import enum
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.db.models.processor import Processor
 
 
 def utc_now() -> datetime:
@@ -24,6 +28,11 @@ class ProcessingTask(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     demand_id: Mapped[int] = mapped_column(ForeignKey("demands.id"), index=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    processor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("processors.id"),
+        nullable=True,
+        index=True,
+    )
     task_type: Mapped[str] = mapped_column(String(32))
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), default=TaskStatus.QUEUED)
     progress: Mapped[int] = mapped_column(default=0)
@@ -40,10 +49,17 @@ class ProcessingTask(Base):
         cascade="all, delete-orphan",
         order_by="TaskInputAsset.id",
     )
+    processor: Mapped["Processor | None"] = relationship()
 
     @property
     def input_asset_ids(self) -> list[int]:
         return [item.catalog_asset_id for item in self.input_assets]
+
+    @property
+    def processor_name(self) -> str | None:
+        if self.processor is None:
+            return None
+        return self.processor.name
 
 
 class TaskInputAsset(Base):

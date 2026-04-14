@@ -30,6 +30,8 @@ class TaskRead(BaseModel):
     demand_id: int
     input_asset_ids: list[int]
     created_by: int
+    processor_id: int | None = None
+    processor_name: str | None = None
     task_type: str
     status: TaskStatus
     progress: int

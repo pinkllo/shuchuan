@@ -5,6 +5,8 @@ export interface TaskItem {
   demandId: number;
   inputAssetIds: number[];
   createdBy: number;
+  processorId?: number | null;
+  processorName?: string | null;
   taskType: string;
   status: TaskStatus;
   progress: number;

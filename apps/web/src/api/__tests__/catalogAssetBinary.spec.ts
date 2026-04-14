@@ -28,6 +28,7 @@ describe("catalog asset binary api", () => {
     expect(url).toContain("/api/catalogs/7/assets/21/preview-file");
     expect((request.headers as Record<string, string>).Authorization).toBe("Bearer token-123");
     expect(result.contentType).toBe("image/png");
-    expect(result.blob).toBeInstanceOf(Blob);
+    expect(result.blob.size).toBe(3);
+    expect(result.blob.type).toBe("image/png");
   });
 });

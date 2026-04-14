@@ -12,6 +12,8 @@ interface BackendTask {
   demand_id: number;
   input_asset_ids: number[];
   created_by: number;
+  processor_id?: number | null;
+  processor_name?: string | null;
   task_type: string;
   status: TaskStatus;
   progress: number;
@@ -94,6 +96,8 @@ function mapTask(item: BackendTask): TaskItem {
     demandId: item.demand_id,
     inputAssetIds: item.input_asset_ids,
     createdBy: item.created_by,
+    processorId: item.processor_id ?? null,
+    processorName: item.processor_name ?? null,
     taskType: item.task_type,
     status: item.status,
     progress: item.progress,
