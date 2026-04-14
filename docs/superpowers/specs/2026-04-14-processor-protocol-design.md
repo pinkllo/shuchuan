@@ -187,6 +187,7 @@ processors
 
 - 任务状态设为 `completed`，进度设为 100
 - 为每个 output_file 创建 `TaskArtifact` 记录
+- `file_path` 必须为相对于项目根目录的相对路径（与现有 TaskArtifact 存储约定一致），平台在 `/execute` 中下发的 `output_dir` 是绝对路径，处理器写入文件后需将路径转换为相对路径再上报
 - 若文件路径在 `uploads/delivery/` 下，自动更新需求状态为 `delivered`
 - 记录审计日志
 
