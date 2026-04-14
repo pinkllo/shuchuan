@@ -10,9 +10,11 @@ interface BackendCatalog {
   version: string;
   fields_description: string;
   scale_description: string;
+  upload_method: string;
   sensitivity_level: string;
   description: string;
   status: CatalogItem["status"];
+  asset_count: number;
   created_at: string;
 }
 
@@ -27,19 +29,24 @@ export async function fetchMyCatalogs(token: string): Promise<CatalogItem[]> {
 }
 
 export async function createCatalog(payload: CatalogCreatePayload, token: string): Promise<CatalogItem> {
+  const formData = new FormData();
+  formData.append("name", payload.name);
+  formData.append("data_type", payload.dataType);
+  formData.append("granularity", payload.granularity);
+  formData.append("version", payload.version);
+  formData.append("fields_description", payload.fieldsDescription);
+  formData.append("scale_description", payload.scaleDescription);
+  formData.append("upload_method", payload.uploadMethod);
+  formData.append("sensitivity_level", payload.sensitivityLevel);
+  formData.append("description", payload.description);
+  for (const file of payload.files) {
+    formData.append("files", file);
+  }
+
   const response = await http<BackendCatalog>("/api/catalogs", {
     method: "POST",
     token,
-    body: {
-      name: payload.name,
-      data_type: payload.dataType,
-      granularity: payload.granularity,
-      version: payload.version,
-      fields_description: payload.fieldsDescription,
-      scale_description: payload.scaleDescription,
-      sensitivity_level: payload.sensitivityLevel,
-      description: payload.description
-    }
+    body: formData
   });
 
   return mapCatalog(response);
@@ -73,9 +80,11 @@ function mapCatalog(item: BackendCatalog): CatalogItem {
     version: item.version,
     fieldsDescription: item.fields_description,
     scaleDescription: item.scale_description,
+    uploadMethod: item.upload_method,
     sensitivityLevel: item.sensitivity_level,
     description: item.description,
     status: item.status,
+    assetCount: item.asset_count,
     createdAt: item.created_at
   };
 }

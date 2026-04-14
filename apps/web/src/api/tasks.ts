@@ -10,7 +10,7 @@ import type {
 interface BackendTask {
   id: number;
   demand_id: number;
-  input_asset_id: number;
+  input_asset_ids: number[];
   created_by: number;
   task_type: string;
   status: TaskStatus;
@@ -41,7 +41,7 @@ export async function createTask(payload: TaskCreatePayload, token: string): Pro
     token,
     body: {
       demand_id: payload.demandId,
-      input_asset_id: payload.inputAssetId,
+      input_asset_ids: payload.inputAssetIds,
       task_type: payload.taskType,
       config: payload.config
     }
@@ -92,7 +92,7 @@ function mapTask(item: BackendTask): TaskItem {
   return {
     id: item.id,
     demandId: item.demand_id,
-    inputAssetId: item.input_asset_id,
+    inputAssetIds: item.input_asset_ids,
     createdBy: item.created_by,
     taskType: item.task_type,
     status: item.status,

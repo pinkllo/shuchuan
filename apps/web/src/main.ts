@@ -8,9 +8,18 @@ import router from './router'
 import './styles/theme.css'
 import './styles/base.css'
 
+const TOP_NAV_HEIGHT = 64
+const MESSAGE_SAFE_MARGIN = 24
+const MESSAGE_OFFSET = TOP_NAV_HEIGHT + MESSAGE_SAFE_MARGIN
+
 const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
-app.use(ElementPlus, { locale: zhCn })
+app.use(ElementPlus, {
+  locale: zhCn,
+  message: {
+    offset: MESSAGE_OFFSET
+  }
+})
 app.mount('#app')

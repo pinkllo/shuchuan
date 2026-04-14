@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.db.models.task import TaskStatus
 
@@ -8,7 +8,7 @@ from app.db.models.task import TaskStatus
 class TaskCreate(BaseModel):
     demand_id: int
     task_type: str
-    input_asset_id: int
+    input_asset_ids: list[int] = Field(min_length=1)
     config: dict[str, str]
 
 
@@ -28,7 +28,7 @@ class TaskRead(BaseModel):
 
     id: int
     demand_id: int
-    input_asset_id: int
+    input_asset_ids: list[int]
     created_by: int
     task_type: str
     status: TaskStatus

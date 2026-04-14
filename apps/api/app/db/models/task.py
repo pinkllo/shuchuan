@@ -1,8 +1,8 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -23,7 +23,6 @@ class ProcessingTask(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     demand_id: Mapped[int] = mapped_column(ForeignKey("demands.id"), index=True)
-    input_asset_id: Mapped[int] = mapped_column(ForeignKey("uploaded_assets.id"), index=True)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     task_type: Mapped[str] = mapped_column(String(32))
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), default=TaskStatus.QUEUED)
@@ -36,6 +35,25 @@ class ProcessingTask(Base):
         default=utc_now,
         onupdate=utc_now,
     )
+    input_assets: Mapped[list["TaskInputAsset"]] = relationship(
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="TaskInputAsset.id",
+    )
+
+    @property
+    def input_asset_ids(self) -> list[int]:
+        return [item.catalog_asset_id for item in self.input_assets]
+
+
+class TaskInputAsset(Base):
+    __tablename__ = "task_input_assets"
+    __table_args__ = (UniqueConstraint("task_id", "catalog_asset_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("processing_tasks.id"), index=True)
+    catalog_asset_id: Mapped[int] = mapped_column(ForeignKey("catalog_assets.id"), index=True)
+    task: Mapped["ProcessingTask"] = relationship(back_populates="input_assets")
 
 
 class TaskArtifact(Base):

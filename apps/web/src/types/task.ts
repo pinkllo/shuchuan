@@ -3,7 +3,7 @@ export type TaskStatus = "queued" | "running" | "completed" | "failed";
 export interface TaskItem {
   id: number;
   demandId: number;
-  inputAssetId: number;
+  inputAssetIds: number[];
   createdBy: number;
   taskType: string;
   status: TaskStatus;
@@ -15,7 +15,7 @@ export interface TaskItem {
 
 export interface TaskCreatePayload {
   demandId: number;
-  inputAssetId: number;
+  inputAssetIds: number[];
   taskType: string;
   config: Record<string, string>;
 }

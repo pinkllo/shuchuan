@@ -9,9 +9,11 @@ export interface CatalogItem {
   version: string;
   fieldsDescription: string;
   scaleDescription: string;
+  uploadMethod: string;
   sensitivityLevel: string;
   description: string;
   status: CatalogStatus;
+  assetCount: number;
   createdAt: string;
 }
 
@@ -22,8 +24,10 @@ export interface CatalogCreatePayload {
   version: string;
   fieldsDescription: string;
   scaleDescription: string;
+  uploadMethod: string;
   sensitivityLevel: string;
   description: string;
+  files: File[];
 }
 
 export const catalogStatusLabels: Record<CatalogStatus, string> = {

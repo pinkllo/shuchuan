@@ -2,11 +2,11 @@ from pathlib import Path
 
 from fastapi import HTTPException, status
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
+from sqlalchemy import bindparam, text
+from sqlalchemy.orm import Session, selectinload
 
-from app.db.models.asset import UploadedAsset
 from app.db.models.demand import Demand, DemandStatus
-from app.db.models.task import ProcessingTask, TaskArtifact, TaskStatus
+from app.db.models.task import ProcessingTask, TaskArtifact, TaskInputAsset, TaskStatus
 from app.schemas.delivery import DeliveryRead
 from app.services.file_storage import ensure_existing_upload
 from app.services.operation_log_service import log_operation
@@ -15,20 +15,23 @@ ALLOWED_TRANSITIONS = {
     TaskStatus.QUEUED: {TaskStatus.RUNNING},
     TaskStatus.RUNNING: {TaskStatus.COMPLETED, TaskStatus.FAILED},
 }
+ACTIVE_DEMAND_STATUSES = {DemandStatus.DATA_UPLOADED, DemandStatus.PROCESSING}
+CATALOG_ASSET_LOOKUP = text(
+    "SELECT id, catalog_id FROM catalog_assets WHERE id IN :asset_ids"
+).bindparams(bindparam("asset_ids", expanding=True))
 
 
 def create_processing_task(db: Session, *, payload, creator_id: int) -> ProcessingTask:
     demand = db.get(Demand, payload.demand_id)
-    asset = db.get(UploadedAsset, payload.input_asset_id)
-    if demand is None or asset is None or asset.demand_id != payload.demand_id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务输入不存在")
-    if demand.requester_id != creator_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权限")
-    if demand.status != DemandStatus.DATA_UPLOADED:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="需求尚未上传数据")
+    _ensure_task_access(demand, creator_id=creator_id)
+    _ensure_demand_ready(demand)
+    asset_ids = _validate_catalog_assets(
+        db,
+        catalog_id=demand.catalog_id,
+        input_asset_ids=payload.input_asset_ids,
+    )
     task = ProcessingTask(
         demand_id=payload.demand_id,
-        input_asset_id=payload.input_asset_id,
         created_by=creator_id,
         task_type=payload.task_type,
         status=TaskStatus.QUEUED,
@@ -36,6 +39,9 @@ def create_processing_task(db: Session, *, payload, creator_id: int) -> Processi
     )
     demand.status = DemandStatus.PROCESSING
     db.add(task)
+    db.flush()
+    for asset_id in asset_ids:
+        db.add(TaskInputAsset(task_id=task.id, catalog_asset_id=asset_id))
     db.commit()
     db.refresh(task)
     return task
@@ -44,6 +50,7 @@ def create_processing_task(db: Session, *, payload, creator_id: int) -> Processi
 def list_tasks_for_creator(db: Session, *, creator_id: int) -> list[ProcessingTask]:
     return (
         db.query(ProcessingTask)
+        .options(selectinload(ProcessingTask.input_assets))
         .filter(ProcessingTask.created_by == creator_id)
         .order_by(ProcessingTask.id.desc())
         .all()
@@ -148,3 +155,37 @@ def _get_task(db: Session, task_id: int, *, operator_id: int) -> ProcessingTask:
     if task.created_by != operator_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权限")
     return task
+
+
+def _ensure_task_access(demand: Demand | None, *, creator_id: int) -> None:
+    if demand is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="需求不存在")
+    if demand.requester_id != creator_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权限")
+
+
+def _ensure_demand_ready(demand: Demand) -> None:
+    if demand.status not in ACTIVE_DEMAND_STATUSES:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="需求尚未上传数据")
+
+
+def _validate_catalog_assets(
+    db: Session,
+    *,
+    catalog_id: int,
+    input_asset_ids: list[int],
+) -> list[int]:
+    asset_ids = list(input_asset_ids)
+    if len(set(asset_ids)) != len(asset_ids):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="输入文件不能重复")
+    asset_catalogs = _load_catalog_assets(db, asset_ids)
+    if len(asset_catalogs) != len(set(asset_ids)):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务输入不存在")
+    if any(asset_catalog != catalog_id for asset_catalog in asset_catalogs.values()):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="任务输入不属于当前目录")
+    return asset_ids
+
+
+def _load_catalog_assets(db: Session, asset_ids: list[int]) -> dict[int, int]:
+    rows = db.execute(CATALOG_ASSET_LOOKUP, {"asset_ids": asset_ids}).mappings().all()
+    return {row["id"]: row["catalog_id"] for row in rows}

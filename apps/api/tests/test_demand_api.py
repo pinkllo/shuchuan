@@ -1,6 +1,35 @@
 from io import BytesIO
 
 
+def _catalog_form_data(
+    *,
+    name: str,
+    granularity: str,
+    version: str,
+    fields_description: str,
+    scale_description: str,
+    description: str,
+) -> dict[str, str]:
+    return {
+        "name": name,
+        "data_type": "text",
+        "granularity": granularity,
+        "version": version,
+        "fields_description": fields_description,
+        "scale_description": scale_description,
+        "upload_method": "平台上传",
+        "sensitivity_level": "internal",
+        "description": description,
+    }
+
+
+def _catalog_files(*names: str) -> list[tuple[str, tuple[str, BytesIO, str]]]:
+    return [
+        ("files", (name, BytesIO(b'{"ok": true}\n'), "application/json"))
+        for name in names
+    ]
+
+
 def test_aggregator_can_create_demand_for_published_catalog(
     authenticated_client,
 ) -> None:
@@ -9,16 +38,15 @@ def test_aggregator_can_create_demand_for_published_catalog(
 
     create_catalog_response = provider_client.post(
         "/api/catalogs",
-        json={
-            "name": "课程论坛问答集",
-            "data_type": "text",
-            "granularity": "主题/帖子/回复",
-            "version": "v2026.04",
-            "fields_description": "标题、正文、回复内容",
-            "scale_description": "约 12000 条",
-            "sensitivity_level": "internal",
-            "description": "教育问答语料",
-        },
+        data=_catalog_form_data(
+            name="课程论坛问答集",
+            granularity="主题/帖子/回复",
+            version="v2026.04",
+            fields_description="标题、正文、回复内容",
+            scale_description="约 12000 条",
+            description="教育问答语料",
+        ),
+        files=_catalog_files("demand-source.jsonl"),
     )
     catalog_id = create_catalog_response.json()["id"]
     provider_client.post(f"/api/catalogs/{catalog_id}/publish")
@@ -36,22 +64,21 @@ def test_aggregator_can_create_demand_for_published_catalog(
     assert response.json()["status"] == "pending_approval"
 
 
-def test_provider_can_only_upload_after_approval(authenticated_client) -> None:
+def test_provider_approval_moves_demand_to_data_uploaded(authenticated_client) -> None:
     provider_client = authenticated_client("provider")
     aggregator_client = authenticated_client("aggregator")
 
     create_catalog_response = provider_client.post(
         "/api/catalogs",
-        json={
-            "name": "科研摘要",
-            "data_type": "text",
-            "granularity": "项目/摘要",
-            "version": "v1",
-            "fields_description": "项目名、摘要",
-            "scale_description": "3200 条",
-            "sensitivity_level": "internal",
-            "description": "科研摘要数据",
-        },
+        data=_catalog_form_data(
+            name="科研摘要",
+            granularity="项目/摘要",
+            version="v1",
+            fields_description="项目名、摘要",
+            scale_description="3200 条",
+            description="科研摘要数据",
+        ),
+        files=_catalog_files("research-a.jsonl", "research-b.jsonl"),
     )
     catalog_id = create_catalog_response.json()["id"]
     provider_client.post(f"/api/catalogs/{catalog_id}/publish")
@@ -66,45 +93,30 @@ def test_provider_can_only_upload_after_approval(authenticated_client) -> None:
     )
     demand_id = create_demand_response.json()["id"]
 
-    denied_response = provider_client.post(
-        f"/api/demands/{demand_id}/assets",
-        files={"file": ("sample.jsonl", BytesIO(b"{}"), "application/json")},
-    )
-    assert denied_response.status_code == 409
-
     approve_response = provider_client.post(
         f"/api/demands/{demand_id}/approve",
         json={"review_note": "通过"},
     )
     assert approve_response.status_code == 200
-    assert approve_response.json()["status"] == "approved"
-
-    upload_response = provider_client.post(
-        f"/api/demands/{demand_id}/assets",
-        files={"file": ("sample.jsonl", BytesIO(b"{}"), "application/json")},
-    )
-    assert upload_response.status_code == 201
-    assert upload_response.json()["file_name"] == "sample.jsonl"
-    assert upload_response.json()["file_path"].startswith("uploads/raw/")
+    assert approve_response.json()["status"] == "data_uploaded"
 
 
-def test_requester_can_list_uploaded_assets_for_owned_demand(authenticated_client) -> None:
+def test_requester_can_list_catalog_assets_for_owned_demand(authenticated_client) -> None:
     provider_client = authenticated_client("provider")
     owner_client = authenticated_client("aggregator")
     other_client = authenticated_client("aggregator")
 
     create_catalog_response = provider_client.post(
         "/api/catalogs",
-        json={
-            "name": "资产查询目录",
-            "data_type": "text",
-            "granularity": "项目/摘要",
-            "version": "v1",
-            "fields_description": "项目名、摘要",
-            "scale_description": "3200 条",
-            "sensitivity_level": "internal",
-            "description": "资产查询测试",
-        },
+        data=_catalog_form_data(
+            name="资产查询目录",
+            granularity="项目/摘要",
+            version="v1",
+            fields_description="项目名、摘要",
+            scale_description="3200 条",
+            description="资产查询测试",
+        ),
+        files=_catalog_files("sample-a.jsonl", "sample-b.jsonl"),
     )
     catalog_id = create_catalog_response.json()["id"]
     provider_client.post(f"/api/catalogs/{catalog_id}/publish")
@@ -124,20 +136,19 @@ def test_requester_can_list_uploaded_assets_for_owned_demand(authenticated_clien
         f"/api/demands/{demand_id}/approve",
         json={"review_note": "通过"},
     )
-    provider_client.post(
-        f"/api/demands/{demand_id}/assets",
-        files={"file": ("sample.jsonl", BytesIO(b'{"ok": true}'), "application/json")},
-    )
 
-    owner_response = owner_client.get(f"/api/demands/{demand_id}/assets")
+    owner_response = owner_client.get(f"/api/catalogs/{catalog_id}/assets")
     assert owner_response.status_code == 200
-    assert owner_response.json()[0]["demand_id"] == demand_id
+    assert {item["file_name"] for item in owner_response.json()} == {
+        "sample-a.jsonl",
+        "sample-b.jsonl",
+    }
 
-    provider_response = provider_client.get(f"/api/demands/{demand_id}/assets")
+    provider_response = provider_client.get(f"/api/catalogs/{catalog_id}/assets")
     assert provider_response.status_code == 200
-    assert provider_response.json()[0]["file_name"] == "sample.jsonl"
+    assert provider_response.json()[0]["catalog_id"] == catalog_id
 
-    forbidden_response = other_client.get(f"/api/demands/{demand_id}/assets")
+    forbidden_response = other_client.get(f"/api/catalogs/{catalog_id}/assets")
     assert forbidden_response.status_code == 403
 
 
@@ -149,16 +160,15 @@ def test_demands_list_is_filtered_by_role(authenticated_client) -> None:
 
     create_catalog_response = provider_client.post(
         "/api/catalogs",
-        json={
-            "name": "需求列表测试目录",
-            "data_type": "text",
-            "granularity": "主题/帖子",
-            "version": "v1",
-            "fields_description": "标题、正文",
-            "scale_description": "500 条",
-            "sensitivity_level": "internal",
-            "description": "需求列表过滤测试",
-        },
+        data=_catalog_form_data(
+            name="需求列表测试目录",
+            granularity="主题/帖子",
+            version="v1",
+            fields_description="标题、正文",
+            scale_description="500 条",
+            description="需求列表过滤测试",
+        ),
+        files=_catalog_files("demand-list.jsonl"),
     )
     catalog_id = create_catalog_response.json()["id"]
     provider_client.post(f"/api/catalogs/{catalog_id}/publish")
@@ -198,16 +208,15 @@ def test_consumer_only_sees_delivered_demands_in_list(authenticated_client) -> N
 
     create_catalog_response = provider_client.post(
         "/api/catalogs",
-        json={
-            "name": "交付需求目录",
-            "data_type": "text",
-            "granularity": "章节/问答",
-            "version": "v1",
-            "fields_description": "章节、问题、答案",
-            "scale_description": "1000 条",
-            "sensitivity_level": "internal",
-            "description": "consumer demand list",
-        },
+        data=_catalog_form_data(
+            name="交付需求目录",
+            granularity="章节/问答",
+            version="v1",
+            fields_description="章节、问题、答案",
+            scale_description="1000 条",
+            description="consumer demand list",
+        ),
+        files=_catalog_files("delivery-source.jsonl"),
     )
     catalog_id = create_catalog_response.json()["id"]
     provider_client.post(f"/api/catalogs/{catalog_id}/publish")
@@ -223,16 +232,14 @@ def test_consumer_only_sees_delivered_demands_in_list(authenticated_client) -> N
     )
     demand_id = demand_response.json()["id"]
     provider_client.post(f"/api/demands/{demand_id}/approve", json={"review_note": "通过"})
-    upload_response = provider_client.post(
-        f"/api/demands/{demand_id}/assets",
-        files={"file": ("sample.jsonl", BytesIO(b"{}"), "application/json")},
-    )
+    asset_response = provider_client.get(f"/api/catalogs/{catalog_id}/assets")
+    asset_id = asset_response.json()[0]["id"]
     task_response = aggregator_client.post(
         "/api/tasks",
         json={
             "demand_id": demand_id,
             "task_type": "instruction",
-            "input_asset_id": upload_response.json()["id"],
+            "input_asset_ids": [asset_id],
             "config": {"model": "Qwen-2.5-72B"},
         },
     )

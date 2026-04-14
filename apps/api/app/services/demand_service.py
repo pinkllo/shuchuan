@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.asset import UploadedAsset
 from app.db.models.catalog import Catalog, CatalogStatus
+from app.db.models.catalog_asset import CatalogAsset
 from app.db.models.demand import Demand, DemandStatus
 from app.db.models.user import User, UserRole
 from app.services.file_storage import save_demand_upload
@@ -61,7 +62,9 @@ def approve_demand(db: Session, *, demand_id: int, review_note: str, provider_id
     demand = _owned_demand(db, demand_id, provider_id)
     if demand.status != DemandStatus.PENDING_APPROVAL:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="需求状态非法")
-    demand.status = DemandStatus.APPROVED
+    if not _catalog_has_assets(db, catalog_id=demand.catalog_id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="目录下无可用文件")
+    demand.status = DemandStatus.DATA_UPLOADED
     demand.approval_note = review_note
     log_operation(
         db,
@@ -84,7 +87,7 @@ def upload_asset(
     provider_id: int,
 ) -> UploadedAsset:
     demand = _owned_demand(db, demand_id, provider_id)
-    if demand.status != DemandStatus.APPROVED:
+    if demand.status not in {DemandStatus.APPROVED, DemandStatus.DATA_UPLOADED}:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="需求未审批通过")
     stored = save_demand_upload(demand_id=demand_id, upload=upload)
     asset = UploadedAsset(demand_id=demand.id, uploaded_by=provider_id, **stored)
@@ -119,3 +122,8 @@ def _can_read_assets(*, user: User, demand: Demand) -> bool:
     if user.role == UserRole.AGGREGATOR:
         return demand.requester_id == user.id
     return False
+
+
+def _catalog_has_assets(db: Session, *, catalog_id: int) -> bool:
+    asset = db.query(CatalogAsset.id).filter(CatalogAsset.catalog_id == catalog_id).first()
+    return asset is not None

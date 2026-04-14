@@ -4,6 +4,35 @@ from pathlib import Path
 from app.core.config import settings
 
 
+def _catalog_form_data(
+    *,
+    name: str,
+    granularity: str,
+    version: str,
+    fields_description: str,
+    scale_description: str,
+    description: str,
+) -> dict[str, str]:
+    return {
+        "name": name,
+        "data_type": "text",
+        "granularity": granularity,
+        "version": version,
+        "fields_description": fields_description,
+        "scale_description": scale_description,
+        "upload_method": "平台上传",
+        "sensitivity_level": "internal",
+        "description": description,
+    }
+
+
+def _catalog_files(*names: str) -> list[tuple[str, tuple[str, BytesIO, str]]]:
+    return [
+        ("files", (name, BytesIO(b'{"ok": true}\n'), "application/json"))
+        for name in names
+    ]
+
+
 def test_consumer_only_sees_delivered_results(authenticated_client) -> None:
     admin_client = authenticated_client("admin")
     provider_client = authenticated_client("provider")
@@ -12,16 +41,15 @@ def test_consumer_only_sees_delivered_results(authenticated_client) -> None:
 
     create_catalog_response = provider_client.post(
         "/api/catalogs",
-        json={
-            "name": "教材问答集",
-            "data_type": "text",
-            "granularity": "章节/问答",
-            "version": "v1",
-            "fields_description": "章节、问题、答案",
-            "scale_description": "4200 条",
-            "sensitivity_level": "internal",
-            "description": "教材问答",
-        },
+        data=_catalog_form_data(
+            name="教材问答集",
+            granularity="章节/问答",
+            version="v1",
+            fields_description="章节、问题、答案",
+            scale_description="4200 条",
+            description="教材问答",
+        ),
+        files=_catalog_files("textbook.jsonl"),
     )
     catalog_id = create_catalog_response.json()["id"]
     provider_client.post(f"/api/catalogs/{catalog_id}/publish")
@@ -36,16 +64,13 @@ def test_consumer_only_sees_delivered_results(authenticated_client) -> None:
     )
     demand_id = demand_response.json()["id"]
     provider_client.post(f"/api/demands/{demand_id}/approve", json={"review_note": "通过"})
-    asset_response = provider_client.post(
-        f"/api/demands/{demand_id}/assets",
-        files={"file": ("sample.jsonl", BytesIO(b"{}"), "application/json")},
-    )
+    asset_response = provider_client.get(f"/api/catalogs/{catalog_id}/assets")
     task_response = aggregator_client.post(
         "/api/tasks",
         json={
             "demand_id": demand_id,
             "task_type": "instruction",
-            "input_asset_id": asset_response.json()["id"],
+            "input_asset_ids": [asset_response.json()[0]["id"]],
             "config": {
                 "model": "Qwen-2.5-72B",
                 "prompt_template": "标准问答模板",
@@ -110,16 +135,15 @@ def test_admin_can_list_operation_logs(authenticated_client) -> None:
 
     provider_client.post(
         "/api/catalogs",
-        json={
-            "name": "日志目录",
-            "data_type": "text",
-            "granularity": "条目",
-            "version": "v1",
-            "fields_description": "标题、内容",
-            "scale_description": "10 条",
-            "sensitivity_level": "internal",
-            "description": "审计日志测试",
-        },
+        data=_catalog_form_data(
+            name="日志目录",
+            granularity="条目",
+            version="v1",
+            fields_description="标题、内容",
+            scale_description="10 条",
+            description="审计日志测试",
+        ),
+        files=_catalog_files("audit-log.jsonl"),
     )
 
     response = admin_client.get("/api/admin/logs")
