@@ -3,6 +3,8 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 
 import { getErrorMessage } from "@/api/http";
+import { fetchOnlineProcessors } from "@/api/processors";
+import { downloadTaskResult } from "@/api/tasks";
 import MasterDetail from "@/components/MasterDetail.vue";
 import ItemCard from "@/components/ItemCard.vue";
 import DetailPanel from "@/components/DetailPanel.vue";
@@ -10,10 +12,12 @@ import InlineForm from "@/components/InlineForm.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
 import ProgressBar from "@/components/ProgressBar.vue";
 import { usePermission } from "@/composables/usePermission";
+import { useCapabilityStore } from "@/stores/capabilityStore";
 import { useCatalogStore } from "@/stores/catalogStore";
 import { useDemandStore } from "@/stores/demandStore";
 import { useSessionStore } from "@/stores/session";
 import { useTaskStore } from "@/stores/taskStore";
+import type { Processor } from "@/types/processor";
 import type { TaskStatus } from "@/types/task";
 import { taskStatusLabels, formatTaskType } from "@/types/task";
 
@@ -21,6 +25,7 @@ const sessionStore = useSessionStore();
 const taskStore = useTaskStore();
 const demandStore = useDemandStore();
 const catalogStore = useCatalogStore();
+const capabilityStore = useCapabilityStore();
 const permission = usePermission();
 
 const selectedId = ref<number | null>(null);
@@ -36,6 +41,7 @@ const statusNote = ref("");
 
 const artifactDialog = ref(false);
 const artifactForm = reactive({ fileName: "", filePath: "", sampleCount: 0, note: "" });
+const onlineProcessors = ref<Processor[]>([]);
 
 const createForm = reactive({
   demandId: 0, inputAssetIds: [] as number[], taskType: "instruction",
@@ -61,12 +67,33 @@ const availableDemands = computed(() => demandStore.items.filter((d) => d.status
 const selectedDemand = computed(() => demandStore.items.find((d) => d.id === createForm.demandId) ?? null);
 const availableAssets = computed(() => selectedDemand.value ? catalogStore.assetsForCatalog(selectedDemand.value.catalogId) : []);
 const isManual = computed(() => selected.value && !selected.value.processorId);
+const taskTypeOptions = computed(() => {
+  const optionMap = new Map<string, string>();
+  for (const processor of onlineProcessors.value) {
+    optionMap.set(processor.taskType, `自动 · ${processor.name}`);
+  }
+  for (const capability of capabilityStore.selectableCapabilities) {
+    if (!optionMap.has(capability.id)) {
+      optionMap.set(capability.id, capability.name);
+    }
+  }
+  if (!optionMap.has(createForm.taskType)) {
+    optionMap.set(createForm.taskType, createForm.taskType);
+  }
+  return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
+});
 
 async function loadPage() {
   const token = sessionStore.accessToken;
   if (!token) return;
   try {
-    await Promise.all([taskStore.loadAll(token), demandStore.loadAll(token), catalogStore.loadPublished(token)]);
+    const [, , , processors] = await Promise.all([
+      taskStore.loadAll(token),
+      demandStore.loadAll(token),
+      catalogStore.loadPublished(token),
+      fetchOnlineProcessors(token),
+    ]);
+    onlineProcessors.value = processors;
   } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
 
@@ -74,7 +101,7 @@ function selectItem(id: number) { creating.value = false; selectedId.value = id;
 
 function startCreating() {
   selectedId.value = null; creating.value = true;
-  Object.assign(createForm, { demandId: 0, inputAssetIds: [], taskType: "instruction", model: "Qwen-2.5-72B", promptTemplate: "标准问答模板", batchSize: "32" });
+  Object.assign(createForm, { demandId: 0, inputAssetIds: [], taskType: _defaultTaskType(), model: "Qwen-2.5-72B", promptTemplate: "标准问答模板", batchSize: "32" });
 }
 
 watch(() => createForm.demandId, async (demandId) => {
@@ -123,6 +150,20 @@ async function handleRegisterArtifact() {
   } catch (error) { ElMessage.error(getErrorMessage(error)); }
 }
 
+async function handleDownloadResult(taskId: number) {
+  const token = sessionStore.accessToken;
+  if (!token) return;
+  try {
+    await downloadTaskResult(taskId, token);
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error));
+  }
+}
+
+function _defaultTaskType() {
+  return onlineProcessors.value[0]?.taskType ?? "instruction";
+}
+
 onMounted(loadPage);
 </script>
 
@@ -162,7 +203,22 @@ onMounted(loadPage);
                 <el-option v-for="a in availableAssets" :key="a.id" :label="a.fileName" :value="a.id" />
               </el-select>
             </el-form-item>
-            <el-form-item label="任务类型"><el-input v-model="createForm.taskType" /></el-form-item>
+            <el-form-item label="任务类型">
+              <el-select
+                v-model="createForm.taskType"
+                filterable
+                allow-create
+                default-first-option
+                placeholder="选择或输入任务类型"
+              >
+                <el-option
+                  v-for="option in taskTypeOptions"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </el-select>
+            </el-form-item>
             <div class="form-row">
               <el-form-item label="模型"><el-input v-model="createForm.model" /></el-form-item>
               <el-form-item label="批次大小"><el-input v-model="createForm.batchSize" /></el-form-item>
@@ -203,6 +259,9 @@ onMounted(loadPage);
           </div>
 
           <template #actions>
+            <template v-if="selected.status === 'completed'">
+              <el-button type="primary" size="small" @click="handleDownloadResult(selected.id)">下载结果</el-button>
+            </template>
             <template v-if="isManual">
               <el-button v-if="selected.status === 'queued'" type="primary" size="small" @click="handleUpdateStatus(selected.id, 'running', '')">开始</el-button>
               <el-button v-if="selected.status === 'running'" type="primary" size="small" @click="handleUpdateStatus(selected.id, 'completed', '')">完成</el-button>

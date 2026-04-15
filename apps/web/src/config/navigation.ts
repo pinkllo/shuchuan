@@ -29,7 +29,15 @@ export const navItems: NavItem[] = [
     label: "平台概览",
     hint: "总览看板",
     icon: markRaw(DataAnalysis),
-    roles: ["admin", "provider", "aggregator", "consumer"]
+    roles: ["admin", "provider", "consumer"]
+  },
+  {
+    name: "workbench",
+    path: "/workbench",
+    label: "工作台",
+    hint: "提交任务与下载结果",
+    icon: markRaw(Operation),
+    roles: ["aggregator"]
   },
   {
     name: "catalogs",
@@ -37,7 +45,7 @@ export const navItems: NavItem[] = [
     label: "数据目录",
     hint: "供给侧信息",
     icon: markRaw(Files),
-    roles: ["provider", "aggregator"]
+    roles: ["provider"]
   },
   {
     name: "demands",
@@ -45,21 +53,13 @@ export const navItems: NavItem[] = [
     label: "需求协同",
     hint: "审批与交付",
     icon: markRaw(SwitchButton),
-    roles: ["provider", "aggregator"]
-  },
-  {
-    name: "processing",
-    path: "/processing",
-    label: "数据处理",
-    hint: "任务与能力",
-    icon: markRaw(Operation),
-    roles: ["aggregator"]
+    roles: ["provider"]
   },
   {
     name: "deliveries",
     path: "/deliveries",
     label: "交付下载",
-    hint: "消费者下载结果",
+    hint: "下载结果",
     icon: markRaw(Tickets),
     roles: ["consumer"]
   },

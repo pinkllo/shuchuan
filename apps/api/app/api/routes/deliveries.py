@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/deliveries", tags=["deliveries"])
 @router.get("", response_model=list[DeliveryRead])
 def list_deliveries_route(
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.CONSUMER)),
+    _: User = Depends(require_roles(UserRole.CONSUMER, UserRole.AGGREGATOR)),
 ) -> list[DeliveryRead]:
     return list_deliveries(db)
 
@@ -21,6 +21,7 @@ def list_deliveries_route(
 def download_delivery_route(
     demand_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(UserRole.CONSUMER)),
+    user: User = Depends(require_roles(UserRole.CONSUMER, UserRole.AGGREGATOR)),
 ):
     return download_delivery(db, demand_id=demand_id, consumer_id=user.id)
+

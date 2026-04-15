@@ -161,6 +161,30 @@ def download_delivery(db: Session, *, demand_id: int, consumer_id: int) -> FileR
     return FileResponse(path=Path(file_path), filename=artifact.file_name)
 
 
+def download_task_result(db: Session, *, task_id: int, operator_id: int) -> FileResponse:
+    task = _get_task(db, task_id, operator_id=operator_id)
+    artifact = (
+        db.query(TaskArtifact)
+        .filter(TaskArtifact.task_id == task.id)
+        .filter(TaskArtifact.file_path.like("uploads/delivery/%"))
+        .order_by(TaskArtifact.created_at.desc(), TaskArtifact.id.desc())
+        .first()
+    )
+    if artifact is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="任务结果文件不存在")
+    file_path = ensure_existing_upload(artifact.file_path)
+    log_operation(
+        db,
+        action="task.result_downloaded",
+        target_type="processing_task",
+        target_id=task.id,
+        actor_id=operator_id,
+        detail=artifact.file_name,
+    )
+    db.commit()
+    return FileResponse(path=Path(file_path), filename=artifact.file_name)
+
+
 def _get_task(db: Session, task_id: int, *, operator_id: int) -> ProcessingTask:
     task = db.get(ProcessingTask, task_id)
     if task is None:

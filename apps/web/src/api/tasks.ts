@@ -90,6 +90,24 @@ export async function createTaskArtifact(
   return mapArtifact(response);
 }
 
+export async function downloadTaskResult(taskId: number, token: string): Promise<void> {
+  const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000").replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/api/tasks/${taskId}/download`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "下载失败");
+  }
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = _extractDownloadFileName(response.headers.get("content-disposition"));
+  link.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 function mapTask(item: BackendTask): TaskItem {
   return {
     id: item.id,
@@ -117,4 +135,15 @@ function mapArtifact(item: BackendTaskArtifact): TaskArtifactItem {
     note: item.note,
     createdAt: item.created_at
   };
+}
+
+function _extractDownloadFileName(contentDisposition: string | null): string {
+  if (!contentDisposition) {
+    return "result.bin";
+  }
+  const match = /filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i.exec(contentDisposition);
+  if (!match) {
+    return "result.bin";
+  }
+  return decodeURIComponent(match[1] ?? match[2] ?? "result.bin");
 }

@@ -13,6 +13,7 @@ from app.schemas.task import (
 from app.services.task_service import (
     create_processing_task,
     create_task_artifact,
+    download_task_result,
     list_tasks_for_creator,
     update_task_status,
 )
@@ -55,3 +56,12 @@ def add_artifact_route(
     user: User = Depends(require_roles(UserRole.AGGREGATOR)),
 ) -> TaskArtifactRead:
     return create_task_artifact(db, task_id=task_id, payload=payload, operator_id=user.id)
+
+
+@router.get("/{task_id}/download")
+def download_task_result_route(
+    task_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.AGGREGATOR)),
+):
+    return download_task_result(db, task_id=task_id, operator_id=user.id)

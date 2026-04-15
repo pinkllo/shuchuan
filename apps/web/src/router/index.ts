@@ -20,6 +20,17 @@ const router = createRouter({
     },
     { path: "/", redirect: "/dashboard" },
     {
+      path: "/workbench",
+      name: "workbench",
+      component: () => import("@/pages/WorkbenchPage.vue"),
+      meta: {
+        auth: true,
+        roles: ["aggregator"],
+        title: "工作台",
+        summary: "选择数据和处理功能，提交任务并下载处理结果。"
+      }
+    },
+    {
       path: "/dashboard",
       name: "dashboard",
       component: () => import("@/pages/DashboardPage.vue"),
@@ -36,9 +47,9 @@ const router = createRouter({
       component: () => import("@/pages/CatalogPage.vue"),
       meta: {
         auth: true,
-        roles: ["provider", "aggregator"],
+        roles: ["provider"],
         title: "数据目录",
-        summary: "提供者管理目录，汇聚者浏览可申请的数据供给。"
+        summary: "提供者管理目录。"
       }
     },
     {
@@ -47,9 +58,9 @@ const router = createRouter({
       component: () => import("@/pages/DemandPage.vue"),
       meta: {
         auth: true,
-        roles: ["provider", "aggregator"],
+        roles: ["provider"],
         title: "需求协同",
-        summary: "围绕真实需求状态、审批和原始文件上传推进链路。"
+        summary: "提供者审批需求和上传数据。"
       }
     },
     {
@@ -69,9 +80,9 @@ const router = createRouter({
       component: () => import("@/pages/DeliveryPage.vue"),
       meta: {
         auth: true,
-        roles: ["consumer"],
+        roles: ["consumer", "aggregator"],
         title: "交付下载",
-        summary: "仅数据使用者可查看和下载最终交付结果。"
+        summary: "查看和下载最终交付结果。"
       }
     },
     {

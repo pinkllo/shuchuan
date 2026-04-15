@@ -49,6 +49,13 @@ const completedTasks = computed(() => taskStore.items.filter((t) => t.status ===
 async function loadDashboard() {
   const token = sessionStore.accessToken;
   if (!token) return;
+
+  // Aggregator goes straight to workbench
+  if (permission.isAggregator.value) {
+    await router.replace("/workbench");
+    return;
+  }
+
   loading.value = true;
   try {
     if (permission.isAdmin.value) {
@@ -67,9 +74,6 @@ async function loadDashboard() {
     const jobs: Promise<unknown>[] = [demandStore.loadAll(token)];
     if (permission.isProvider.value) {
       jobs.push(catalogStore.loadMine(token));
-    }
-    if (permission.isAggregator.value) {
-      jobs.push(catalogStore.loadPublished(token), taskStore.loadAll(token));
     }
     await Promise.all(jobs);
   } catch (error) {

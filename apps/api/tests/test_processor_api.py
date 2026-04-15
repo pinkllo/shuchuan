@@ -65,18 +65,22 @@ def test_heartbeat_rejects_wrong_token(client: TestClient) -> None:
     assert response.status_code == 403
 
 
-def test_list_processors_is_admin_only(
+def test_list_processors_is_available_for_admin_and_aggregator(
     authenticated_client,
     client: TestClient,
 ) -> None:
     _register_processor(client, task_type="grammar_fix")
     admin_client = authenticated_client("admin")
     aggregator_client = authenticated_client("aggregator")
+    provider_client = authenticated_client("provider")
 
     admin_response = admin_client.get("/api/processors")
     aggregator_response = aggregator_client.get("/api/processors")
+    provider_response = provider_client.get("/api/processors")
 
     assert admin_response.status_code == 200
     assert len(admin_response.json()) == 1
     assert admin_response.json()[0]["task_type"] == "grammar_fix"
-    assert aggregator_response.status_code == 403
+    assert aggregator_response.status_code == 200
+    assert aggregator_response.json()[0]["task_type"] == "grammar_fix"
+    assert provider_response.status_code == 403

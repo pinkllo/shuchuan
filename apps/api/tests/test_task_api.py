@@ -350,6 +350,103 @@ def test_aggregator_cannot_update_or_register_artifact_for_foreign_task(
     assert response.status_code == 403
 
 
+def test_aggregator_can_download_completed_task_artifact(authenticated_client, db_session) -> None:
+    provider_client = authenticated_client("provider")
+    aggregator_client = authenticated_client("aggregator")
+    demand = _prepare_task_context(
+        db_session,
+        provider_client,
+        aggregator_client,
+        name="下载结果校验",
+    )
+    task_id = _create_task(
+        aggregator_client,
+        demand_id=demand.id,
+        input_asset_ids=_seed_catalog_assets(
+            db_session,
+            catalog_id=demand.catalog_id,
+            uploaded_by=demand.provider_id,
+            count=1,
+        ),
+    )
+    aggregator_client.post(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "running", "note": "开始处理"},
+    )
+    aggregator_client.post(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "completed", "note": "处理完成"},
+    )
+
+    artifact_disk_path = Path(settings.upload_root) / "delivery" / f"task_{task_id}" / "result.txt"
+    artifact_disk_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_disk_path.write_text("3\n35\n", encoding="utf-8")
+    register_response = aggregator_client.post(
+        f"/api/tasks/{task_id}/artifacts",
+        json={
+            "artifact_type": "processor_output",
+            "file_name": artifact_disk_path.name,
+            "file_path": f"uploads/delivery/task_{task_id}/result.txt",
+            "sample_count": 2,
+            "note": "自动处理结果",
+        },
+    )
+    assert register_response.status_code == 201
+
+    download_response = aggregator_client.get(f"/api/tasks/{task_id}/download")
+
+    assert download_response.status_code == 200
+    assert download_response.content.decode("utf-8").splitlines() == ["3", "35"]
+    assert "result.txt" in download_response.headers.get("content-disposition", "")
+
+
+def test_aggregator_cannot_download_foreign_task_artifact(authenticated_client, db_session) -> None:
+    provider_client = authenticated_client("provider")
+    owner_client = authenticated_client("aggregator")
+    other_client = authenticated_client("aggregator")
+    demand = _prepare_task_context(
+        db_session,
+        provider_client,
+        owner_client,
+        name="下载越权校验",
+    )
+    task_id = _create_task(
+        owner_client,
+        demand_id=demand.id,
+        input_asset_ids=_seed_catalog_assets(
+            db_session,
+            catalog_id=demand.catalog_id,
+            uploaded_by=demand.provider_id,
+            count=1,
+        ),
+    )
+    owner_client.post(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "running", "note": "开始处理"},
+    )
+    owner_client.post(
+        f"/api/tasks/{task_id}/status",
+        json={"status": "completed", "note": "处理完成"},
+    )
+    artifact_disk_path = Path(settings.upload_root) / "delivery" / f"task_{task_id}" / "result.txt"
+    artifact_disk_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_disk_path.write_text("ok", encoding="utf-8")
+    owner_client.post(
+        f"/api/tasks/{task_id}/artifacts",
+        json={
+            "artifact_type": "processor_output",
+            "file_name": artifact_disk_path.name,
+            "file_path": f"uploads/delivery/task_{task_id}/result.txt",
+            "sample_count": 1,
+            "note": "自动处理结果",
+        },
+    )
+
+    response = other_client.get(f"/api/tasks/{task_id}/download")
+
+    assert response.status_code == 403
+
+
 def test_aggregator_only_sees_own_tasks(authenticated_client, db_session) -> None:
     provider_client = authenticated_client("provider")
     owner_client = authenticated_client("aggregator")

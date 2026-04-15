@@ -428,3 +428,44 @@ async def _heartbeat_loop():
 | `403` | Token 无效或与处理器不匹配 |
 | `404` | 任务不存在 |
 | `409` | 处理器离线 / 状态转换非法 |
+
+---
+
+## 12. `test` 加法器处理器（仓库内可直接运行）
+
+为快速验证平台处理器接口链路，仓库已提供可运行的测试处理器：
+
+- 文件：`apps/api/app/test_processor_service.py`
+- `task_type`：默认 `test`
+- 功能：读取输入文本文件，按行解析 `两个数字`（空格分割），输出每行和
+
+启动命令（在 `apps/api` 目录）：
+
+```bash
+uvicorn app.test_processor_service:app --host 0.0.0.0 --port 9000
+```
+
+可选环境变量：
+
+| 变量名 | 默认值 | 说明 |
+|---|---|---|
+| `TEST_PROCESSOR_PLATFORM_URL` | `http://localhost:8000` | 平台地址 |
+| `TEST_PROCESSOR_ENDPOINT_URL` | `http://localhost:9000` | 处理器对外地址（用于注册） |
+| `TEST_PROCESSOR_TASK_TYPE` | `test` | 任务类型 |
+| `TEST_PROCESSOR_HEARTBEAT_INTERVAL` | `30` | 心跳间隔秒数 |
+
+输入文件格式示例（每行两个数）：
+
+```text
+1 2
+10 25
+3.5 4.5
+```
+
+输出文件：`result.txt`（位于平台下发的 `output_dir` 目录）
+
+```text
+3
+35
+8.0
+```

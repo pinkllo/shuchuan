@@ -8,6 +8,7 @@ from app.api.routes.deliveries import router as deliveries_router
 from app.api.routes.demands import router as demands_router
 from app.api.routes.health import router as health_router
 from app.api.routes.processors import router as processors_router
+from app.api.routes.quick_tasks import router as quick_tasks_router
 from app.api.routes.task_callbacks import router as task_callbacks_router
 from app.api.routes.tasks import router as tasks_router
 
@@ -22,3 +23,4 @@ api_router.include_router(tasks_router)
 api_router.include_router(task_callbacks_router)
 api_router.include_router(deliveries_router)
 api_router.include_router(processors_router)
+api_router.include_router(quick_tasks_router)

@@ -45,6 +45,6 @@ def heartbeat_route(
 @router.get("", response_model=list[ProcessorRead])
 def list_route(
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(UserRole.ADMIN)),
+    _: User = Depends(require_roles(UserRole.ADMIN, UserRole.AGGREGATOR)),
 ) -> list[Processor]:
     return list_processors(db)
