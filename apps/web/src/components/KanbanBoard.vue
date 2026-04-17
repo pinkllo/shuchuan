@@ -1,24 +1,5 @@
 <template>
-  <div class="kanban-board">
+  <div class="flex flex-col md:flex-row gap-4 min-h-[320px] w-full">
     <slot />
   </div>
 </template>
-
-<style scoped>
-.kanban-board {
-  display: flex;
-  gap: var(--sp-4);
-  min-height: 320px;
-}
-
-.kanban-board > :deep(*) {
-  flex: 1;
-  min-width: 0;
-}
-
-@media (max-width: 768px) {
-  .kanban-board {
-    flex-direction: column;
-  }
-}
-</style>

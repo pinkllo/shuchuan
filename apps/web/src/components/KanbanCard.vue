@@ -5,41 +5,10 @@ defineEmits<{
 </script>
 
 <template>
-  <article class="kanban-card" @click="$emit('click')">
+  <article 
+    class="p-3 rounded-md bg-white border border-gray-100 cursor-pointer text-sm leading-normal transition-all duration-150 ease-out hover:shadow-sm hover:border-gray-200 hover:-translate-y-[1px] [&_strong]:block [&_strong]:text-sm [&_strong]:font-medium [&_strong]:text-gray-900 [&_strong]:mb-0.5 [&_small]:block [&_small]:text-xs [&_small]:text-gray-400 [&_small]:leading-normal" 
+    @click="$emit('click')"
+  >
     <slot />
   </article>
 </template>
-
-<style scoped>
-.kanban-card {
-  padding: var(--sp-3);
-  border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-light);
-  cursor: pointer;
-  transition: box-shadow var(--duration-fast) var(--ease-default),
-              transform var(--duration-fast) var(--ease-default);
-  font-size: var(--text-sm);
-  line-height: var(--leading-normal);
-}
-
-.kanban-card:hover {
-  box-shadow: var(--shadow-sm);
-  transform: translateY(-1px);
-}
-
-.kanban-card :deep(strong) {
-  display: block;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--text-primary);
-  margin-bottom: 2px;
-}
-
-.kanban-card :deep(small) {
-  display: block;
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  line-height: var(--leading-normal);
-}
-</style>

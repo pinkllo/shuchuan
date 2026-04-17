@@ -5,9 +5,7 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
 import App from './App.vue'
 import router from './router'
-import './styles/design-tokens.css'
-import './styles/theme.css'
-import './styles/base.css'
+import './styles/tailwind.css'
 import './styles/element-overrides.css'
 
 const TOP_NAV_HEIGHT = 48
@@ -21,6 +19,7 @@ app.use(router)
 app.use(ElementPlus, {
   locale: zhCn,
   message: {
+    duration: 2000,
     offset: MESSAGE_OFFSET
   }
 })

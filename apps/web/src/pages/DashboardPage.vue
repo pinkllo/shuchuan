@@ -91,24 +91,24 @@ onMounted(loadDashboard);
 </script>
 
 <template>
-  <div class="dashboard" v-loading="loading">
+  <div class="space-y-6" v-loading="loading">
     <!-- ── Provider Dashboard ── -->
     <template v-if="permission.isProvider.value">
-      <h2 class="dashboard__title">工作看板</h2>
+      <h2 class="text-[18px] font-semibold text-gray-900 tracking-tight mb-4">工作看板</h2>
       <KanbanBoard>
         <KanbanColumn title="待处理" :count="pendingDemands.length">
           <KanbanCard v-for="d in pendingDemands" :key="d.id" @click="navigateTo('/demands')">
             <strong>{{ d.title }}</strong>
             <small>需求 #{{ d.id }} · {{ demandStatusLabels[d.status] }}</small>
           </KanbanCard>
-          <div v-if="pendingDemands.length === 0" class="kanban-empty">暂无待处理需求</div>
+          <div v-if="pendingDemands.length === 0" class="flex flex-col items-center justify-center py-10 px-4 text-sm text-gray-400">暂无待处理需求</div>
         </KanbanColumn>
         <KanbanColumn title="进行中" :count="draftCatalogs.length">
           <KanbanCard v-for="c in draftCatalogs" :key="c.id" @click="navigateTo('/catalogs')">
             <strong>{{ c.name }} {{ c.version }}</strong>
             <small>草稿 · {{ c.assetCount ?? 0 }} 个文件</small>
           </KanbanCard>
-          <div v-if="draftCatalogs.length === 0" class="kanban-empty">暂无草稿目录</div>
+          <div v-if="draftCatalogs.length === 0" class="flex flex-col items-center justify-center py-10 px-4 text-sm text-gray-400">暂无草稿目录</div>
         </KanbanColumn>
         <KanbanColumn title="近期完成" :count="recentDemands.length + publishedCatalogs.length">
           <KanbanCard v-for="d in recentDemands" :key="`d-${d.id}`">
@@ -125,7 +125,7 @@ onMounted(loadDashboard);
 
     <!-- ── Aggregator Dashboard ── -->
     <template v-else-if="permission.isAggregator.value">
-      <h2 class="dashboard__title">工作看板</h2>
+      <h2 class="text-[18px] font-semibold text-gray-900 tracking-tight mb-4">工作看板</h2>
       <KanbanBoard>
         <KanbanColumn title="待处理" :count="pendingDemands.length + activeDemands.length">
           <KanbanCard v-for="d in pendingDemands" :key="d.id" @click="navigateTo('/demands')">
@@ -136,7 +136,7 @@ onMounted(loadDashboard);
             <strong>{{ d.title }}</strong>
             <small>需求 #{{ d.id }} · 可创建任务</small>
           </KanbanCard>
-          <div v-if="pendingDemands.length + activeDemands.length === 0" class="kanban-empty">暂无待处理事项</div>
+          <div v-if="pendingDemands.length + activeDemands.length === 0" class="flex flex-col items-center justify-center py-10 px-4 text-sm text-gray-400">暂无待处理事项</div>
         </KanbanColumn>
         <KanbanColumn title="处理中" :count="runningTasks.length">
           <KanbanCard v-for="t in runningTasks" :key="t.id" @click="navigateTo('/processing')">
@@ -144,7 +144,7 @@ onMounted(loadDashboard);
             <small>{{ t.processorName ?? '手动' }} · {{ taskStatusLabels[t.status] }}</small>
             <ProgressBar v-if="t.status === 'running'" :value="t.progress" style="margin-top: 6px" />
           </KanbanCard>
-          <div v-if="runningTasks.length === 0" class="kanban-empty">暂无运行中的任务</div>
+          <div v-if="runningTasks.length === 0" class="flex flex-col items-center justify-center py-10 px-4 text-sm text-gray-400">暂无运行中的任务</div>
         </KanbanColumn>
         <KanbanColumn title="近期完成" :count="completedTasks.length">
           <KanbanCard v-for="t in completedTasks" :key="t.id" @click="navigateTo('/processing')">
@@ -157,7 +157,7 @@ onMounted(loadDashboard);
 
     <!-- ── Admin Dashboard ── -->
     <template v-else-if="permission.isAdmin.value">
-      <h2 class="dashboard__title">管理看板</h2>
+      <h2 class="text-[18px] font-semibold text-gray-900 tracking-tight mb-4">管理看板</h2>
       <KanbanBoard>
         <KanbanColumn title="待处理" :count="pendingCount">
           <KanbanCard @click="navigateTo('/admin/approvals')">
@@ -190,9 +190,9 @@ onMounted(loadDashboard);
 
     <!-- ── Consumer Dashboard ── -->
     <template v-else-if="permission.isConsumer.value">
-      <h2 class="dashboard__title">交付结果</h2>
-      <section class="surface-card">
-        <el-table :data="deliveries" stripe>
+      <h2 class="text-[18px] font-semibold text-gray-900 tracking-tight mb-4">交付结果</h2>
+      <section class="bg-white border border-gray-200 rounded-lg shadow-[0_2px_8px_rgba(0,0,0,0.04)] p-6 transition-all duration-200">
+        <el-table :data="deliveries" style="width: 100%" class="[&_.el-table__header-wrapper_th]:!bg-gray-50 [&_.el-table__header-wrapper_th]:!text-gray-500 [&_.el-table__header-wrapper_th]:!font-medium [&_.el-table__header-wrapper_th]:!text-xs [&_.el-table__row]:!transition-colors [&_.el-table__row:hover>td]:!bg-gray-50">
           <el-table-column prop="demandTitle" label="需求标题" min-width="220" />
           <el-table-column prop="artifactFileName" label="文件名" min-width="200" />
           <el-table-column prop="sampleCount" label="样本数" width="110" />
@@ -207,19 +207,3 @@ onMounted(loadDashboard);
     </template>
   </div>
 </template>
-
-<style scoped>
-.dashboard__title {
-  margin: 0 0 var(--sp-5);
-  font-size: var(--text-xl);
-  font-weight: var(--weight-semibold);
-  color: var(--text-primary);
-}
-
-.kanban-empty {
-  padding: var(--sp-6) var(--sp-4);
-  text-align: center;
-  font-size: var(--text-sm);
-  color: var(--text-tertiary);
-}
-</style>

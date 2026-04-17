@@ -11,16 +11,16 @@ const route = useRoute();
 const router = useRouter();
 const sessionStore = useSessionStore();
 
-const visibleNavItems = computed(() => filterNavItems(sessionStore.role));
+const visibleNavItems = computed(() => filterNavItems(sessionStore.role));      
 
-const roleTone = computed(() => {
+const roleClasses = computed(() => {
   const map: Record<string, string> = {
-    admin: "info",
-    provider: "success",
-    aggregator: "warning",
-    consumer: "muted"
+    admin: "bg-blue-50 text-blue-600 border border-blue-200",
+    provider: "bg-emerald-50 text-emerald-600 border border-emerald-200",
+    aggregator: "bg-amber-50 text-amber-600 border border-amber-200",
+    consumer: "bg-gray-50 text-gray-500 border border-gray-200"
   };
-  return map[sessionStore.role ?? "provider"] ?? "muted";
+  return map[sessionStore.role ?? "provider"] ?? "bg-gray-50 text-gray-500 border border-gray-200";
 });
 
 async function handleLogout() {
@@ -31,161 +31,45 @@ async function handleLogout() {
 </script>
 
 <template>
-  <div class="shell">
-    <header class="shell__nav">
-      <div class="shell__brand">
-        <span class="shell__logo">数传协同平台</span>
+  <div class="min-h-screen flex flex-col bg-[#fafbfc] font-sans text-gray-900">
+    <header class="h-14 w-full bg-white border-b border-gray-200 px-6 flex items-center sticky top-0 z-50">
+      <div class="mr-8">
+        <span class="text-[15px] font-medium text-gray-900 tracking-wide">数传协同平台</span>
       </div>
 
-      <nav class="shell__tabs">
+      <nav class="flex flex-1 gap-1 h-full items-center">
         <router-link
           v-for="item in visibleNavItems"
           :key="item.name"
           :to="item.path"
-          class="shell__tab"
-          :class="{ 'shell__tab--active': route.name === item.name }"
+          class="h-full flex items-center px-3 text-[13px] font-medium transition-colors duration-150 relative"
+          :class="[
+            route.name === item.name 
+              ? 'text-gray-900 after:absolute after:bottom-0 after:left-3 after:right-3 after:h-0.5 after:bg-gray-900'
+              : 'text-gray-500 hover:text-gray-900'
+          ]"
         >
           {{ item.label }}
         </router-link>
       </nav>
 
-      <div class="shell__user">
-        <span class="shell__role" :class="`shell__role--${roleTone}`">
-          {{ sessionStore.role ? roleLabels[sessionStore.role] : "未登录" }}
+      <div class="ml-auto flex items-center gap-3">
+        <span 
+          class="px-2 py-0.5 rounded uppercase text-[11px] font-semibold tracking-wider"
+          :class="roleClasses"
+        >
+          {{ sessionStore.role ? roleLabels[sessionStore.role] : "未登录" }}    
         </span>
-        <span class="shell__username">{{ sessionStore.displayName || sessionStore.user?.username }}</span>
-        <el-button text size="small" @click="handleLogout">退出</el-button>
+        <span class="text-[13px] font-medium text-gray-700 hidden md:inline-block">
+          {{ sessionStore.displayName || sessionStore.user?.username }}
+        </span>
+        <el-button text size="small" @click="handleLogout">退出</el-button>     
       </div>
     </header>
 
-    <main class="shell__content">
+    <main class="flex-1 w-full max-w-[1400px] mx-auto p-6 md:p-8">
       <router-view />
     </main>
   </div>
 </template>
 
-<style scoped>
-.shell {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-/* ── Top Nav ── */
-.shell__nav {
-  display: flex;
-  align-items: center;
-  height: var(--nav-height);
-  padding: 0 var(--sp-6);
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.shell__brand {
-  margin-right: var(--sp-8);
-}
-
-.shell__logo {
-  font-size: var(--text-md);
-  font-weight: var(--weight-semibold);
-  color: var(--text-primary);
-  letter-spacing: 0.02em;
-}
-
-/* ── Nav Tabs ── */
-.shell__tabs {
-  display: flex;
-  gap: var(--sp-1);
-  height: 100%;
-  align-items: center;
-  flex: 1;
-}
-
-.shell__tab {
-  display: flex;
-  align-items: center;
-  height: 100%;
-  padding: 0 var(--sp-3);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--text-secondary);
-  text-decoration: none;
-  position: relative;
-  transition: color var(--duration-fast) var(--ease-default);
-}
-
-.shell__tab:hover {
-  color: var(--text-primary);
-}
-
-.shell__tab--active {
-  color: var(--accent);
-}
-
-.shell__tab--active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: var(--sp-3);
-  right: var(--sp-3);
-  height: 2px;
-  background: var(--accent);
-  border-radius: 2px 2px 0 0;
-}
-
-/* ── User Area ── */
-.shell__user {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  margin-left: auto;
-}
-
-.shell__role {
-  padding: 2px 10px;
-  border-radius: var(--radius-full);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-}
-
-.shell__role--success { background: var(--success-light); color: var(--success); }
-.shell__role--warning { background: var(--warning-light); color: var(--warning); }
-.shell__role--info { background: var(--info-light); color: var(--info); }
-.shell__role--muted { background: var(--bg-hover); color: var(--text-secondary); }
-
-.shell__username {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--text-primary);
-}
-
-/* ── Content ── */
-.shell__content {
-  flex: 1;
-  max-width: var(--content-max);
-  width: 100%;
-  margin: 0 auto;
-  padding: var(--sp-6);
-  box-sizing: border-box;
-}
-
-/* ── Responsive ── */
-@media (max-width: 768px) {
-  .shell__nav {
-    padding: 0 var(--sp-3);
-    overflow-x: auto;
-  }
-  .shell__brand {
-    margin-right: var(--sp-4);
-  }
-  .shell__content {
-    padding: var(--sp-4);
-  }
-  .shell__username {
-    display: none;
-  }
-}
-</style>

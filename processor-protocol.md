@@ -469,3 +469,54 @@ uvicorn app.test_processor_service:app --host 0.0.0.0 --port 9000
 35
 8.0
 ```
+
+---
+
+## 13. [附录] 自定义前端参数表单 (动态 Schema)
+
+工作台（Workbench）不仅支持全自动流转，还支持**根据任务类别自动渲染自定义输入表单**。如果你的外部处理器需要用户指定额外的运行参数（例如切分粒度、重叠Token、模型引擎类型等），你需要配置前端的动态字段，使其能在界面无缝显示。
+
+### 配置方式
+平台接收到你注册的 `task_type` 并在前端展示时，会自动去前端的状态管理配置中匹配对应的 Schema 数组。
+
+请前往前端库编辑：`apps/web/src/stores/capabilityStore.ts`
+
+在 `capabilities` 初始数组中，添加或修改对象，使其 `id` 与你的 `task_type` 相同，并注入 `schema` 规范：
+
+```typescript
+    {
+      id: "my-custom-task",    // 需与 Processor 注册时的 task_type 保持绝对一致
+      name: "外部某处理服务",
+      description: "在列表展示的功能补充说明卡片",
+      selectable: true,
+      schema: [
+        {
+          prop: "chunkSize",
+          label: "单块包含字数限制 (Token)",
+          type: "input",
+          default: "1000",
+          placeholder: "不填默认1000"
+        },
+        {
+          prop: "engine",
+          label: "处理模型",
+          type: "select",
+          options: ["Fast-Engine", "Deep-Engine", "Balanced"],
+          default: "Balanced"
+        }
+      ]
+    }
+```
+
+### 运行时表现
+1. 用户在前端网格点选你的任务卡片后，工作台会立刻提取此 `schema` 并顺延展开表单，自动处理了双向绑定与空值校验。
+2. 平台最终调用你的处理器 `POST /execute` 时，用户填写的表单内容将**全量打包给 JSON**，并透传进请求体的 `config` 字段中：
+   ```json
+   "config": {
+     "chunkSize": "2000",
+     "engine": "Deep-Engine"
+   }
+   ```
+
+**🌟 免配友好原则**：
+如果你无需收集外部用户的任何输入，无需在 `schema` 里配置任何项目甚至可以缺省这个字段。当 Schema 为空时，平台工作台将表现为**参数区结构完全折叠/消失**，实现极简的“零打扰提交执行”。

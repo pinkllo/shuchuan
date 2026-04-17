@@ -45,7 +45,7 @@ const barColor = computed(() => {
 .progress-bar__fill {
   height: 100%;
   border-radius: var(--radius-full);
-  transition: width var(--duration-slow) var(--ease-default);
+  transition: width var(--duration-fast) var(--ease-default);
 }
 
 .progress-bar__label {

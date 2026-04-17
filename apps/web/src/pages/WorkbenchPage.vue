@@ -38,9 +38,32 @@ const assetsLoading = ref(false);
 const selectedCatalogId = ref<number | null>(null);
 const selectedAssetIds = ref<number[]>([]);
 const selectedTaskType = ref("instruction");
-const configModel = ref("Qwen-2.5-72B");
-const configPrompt = ref("标准问答模板");
-const configBatch = ref("32");
+
+const configValues = ref<Record<string, any>>({});
+
+const currentSchema = computed(() => {
+  const cap = capabilityStore.selectableCapabilities.find(
+    (c) => c.id === selectedTaskType.value
+  );
+  return cap?.schema || [];
+});
+
+watch(
+  selectedTaskType,
+  (newType) => {
+    const cap = capabilityStore.selectableCapabilities.find(
+      (c) => c.id === newType
+    );
+    const newConfig: Record<string, any> = {};
+    if (cap?.schema) {
+      for (const field of cap.schema) {
+        newConfig[field.prop] = field.default ?? "";
+      }
+    }
+    configValues.value = newConfig;
+  },
+  { immediate: true }
+);
 
 // ── Polling ──
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -50,19 +73,33 @@ const selectedCatalog = computed(() =>
 );
 
 const taskTypeOptions = computed(() => {
-  const optionMap = new Map<string, string>();
-  for (const processor of onlineProcessors.value) {
-    optionMap.set(processor.taskType, `自动 · ${processor.name}`);
-  }
+  const optionMap = new Map<string, { value: string, label: string, description: string }>();
   for (const capability of capabilityStore.selectableCapabilities) {
     if (!optionMap.has(capability.id)) {
-      optionMap.set(capability.id, capability.name);
+      optionMap.set(capability.id, {
+        value: capability.id,
+        label: capability.name,
+        description: capability.description || "基础数据处理任务"
+      });
+    }
+  }
+  for (const processor of onlineProcessors.value) {
+    if (!optionMap.has(processor.taskType)) {
+      optionMap.set(processor.taskType, {
+        value: processor.taskType,
+        label: `[外部] ${processor.name}`,
+        description: processor.description || "提交至外接节点执行自动化处理。"
+      });
     }
   }
   if (!optionMap.has(selectedTaskType.value)) {
-    optionMap.set(selectedTaskType.value, selectedTaskType.value);
+    optionMap.set(selectedTaskType.value, {
+      value: selectedTaskType.value,
+      label: selectedTaskType.value,
+      description: "未知类型"
+    });
   }
-  return Array.from(optionMap.entries()).map(([value, label]) => ({ value, label }));
+  return Array.from(optionMap.values());
 });
 
 const canSubmit = computed(() =>
@@ -145,11 +182,7 @@ async function handleSubmit() {
       catalogId: selectedCatalogId.value!,
       inputAssetIds: selectedAssetIds.value,
       taskType: selectedTaskType.value,
-      config: {
-        model: configModel.value,
-        promptTemplate: configPrompt.value,
-        batchSize: configBatch.value,
-      },
+      config: configValues.value,
     };
     const task = await createQuickTask(payload, token);
     tasks.value.unshift(task);
@@ -238,47 +271,57 @@ function formatTime(dateStr: string): string {
       <p class="section-desc">选择数据和处理功能，一键提交。</p>
 
       <div class="submit-form">
-        <div class="form-row">
-          <div class="form-field">
-            <label class="field-label">数据目录</label>
-            <el-select
-              v-model="selectedCatalogId"
-              filterable
-              placeholder="选择目录..."
-              style="width: 100%"
-            >
-              <el-option
-                v-for="c in catalogs"
-                :key="c.id"
-                :label="`${c.name} (${c.version})`"
-                :value="c.id"
-              >
-                <div class="option-row">
-                  <span>{{ c.name }}</span>
-                  <span class="option-meta">{{ c.version }} · {{ c.assetCount ?? 0 }}个文件</span>
-                </div>
-              </el-option>
-            </el-select>
-          </div>
-
-          <div class="form-field">
-            <label class="field-label">处理功能</label>
-            <el-select
-              v-model="selectedTaskType"
-              filterable
-              allow-create
-              default-first-option
-              placeholder="选择功能..."
-              style="width: 100%"
-            >
-              <el-option
+        <div class="form-field">
+          <label class="field-label">
+            处理功能 
+            <span class="ml-1 text-[11px] font-normal text-gray-400 normal-case">{{ taskTypeOptions.length }} 个节点可用</span>
+          </label>
+          <div class="max-h-[240px] overflow-y-auto custom-scrollbar pr-1 -mr-1 pb-1">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 relative">
+              <div 
                 v-for="option in taskTypeOptions"
                 :key="option.value"
-                :label="option.label"
-                :value="option.value"
-              />
-            </el-select>
+                @click="selectedTaskType = option.value"
+                class="relative rounded-lg border p-3.5 cursor-pointer transition-all duration-150 ease-out flex flex-col gap-1.5 shrink-0"
+                :class="selectedTaskType === option.value 
+                  ? 'border-blue-600 bg-blue-50/50 ring-1 ring-blue-600/20' 
+                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]'"
+              >
+                <div class="font-medium text-gray-900 text-sm pr-6 leading-none">
+                  {{ option.label }}
+                </div>
+                <div class="text-xs text-gray-500 leading-relaxed overflow-hidden text-ellipsis line-clamp-2" :title="option.description">
+                  {{ option.description }}
+                </div>
+                <div 
+                  v-if="selectedTaskType === option.value" 
+                  class="absolute top-[17px] right-3.5 w-[6px] h-[6px] rounded-full bg-blue-600"
+                />
+              </div>
+            </div>
           </div>
+        </div>
+
+        <div class="form-field">
+          <label class="field-label">数据目录</label>
+          <el-select
+            v-model="selectedCatalogId"
+            filterable
+            placeholder="请选择需要处理的数据目录..."
+            style="width: 100%"
+          >
+            <el-option
+              v-for="c in catalogs"
+              :key="c.id"
+              :label="`${c.name} (${c.version})`"
+              :value="c.id"
+            >
+              <div class="option-row">
+                <span>{{ c.name }}</span>
+                <span class="option-meta">{{ c.version }} · {{ c.assetCount ?? 0 }}个文件</span>
+              </div>
+            </el-option>
+          </el-select>
         </div>
 
         <div v-if="selectedCatalog" class="form-field">
@@ -321,27 +364,27 @@ function formatTime(dateStr: string): string {
           </span>
         </div>
 
-        <div class="config-row">
-          <div class="form-field form-field--narrow">
-            <label class="field-label">模型</label>
-            <el-select v-model="configModel" style="width: 100%">
-              <el-option label="Qwen-2.5-72B" value="Qwen-2.5-72B" />
-              <el-option label="Qwen-2.5-14B" value="Qwen-2.5-14B" />
-              <el-option label="GLM-4-9B" value="GLM-4-9B" />
-              <el-option label="DeepSeek-V3" value="DeepSeek-V3" />
+        <div v-if="currentSchema.length > 0" class="config-row">
+          <div v-for="field in currentSchema" :key="field.prop" class="form-field form-field--narrow">
+            <label class="field-label">{{ field.label }}</label>
+            <el-select
+              v-if="field.type === 'select'"
+              v-model="configValues[field.prop]"
+              style="width: 100%"
+              :placeholder="field.placeholder"
+            >
+              <el-option
+                v-for="opt in field.options"
+                :key="opt"
+                :label="opt"
+                :value="opt"
+              />
             </el-select>
-          </div>
-          <div class="form-field form-field--narrow">
-            <label class="field-label">提示词模板</label>
-            <el-select v-model="configPrompt" style="width: 100%">
-              <el-option label="标准问答模板" value="标准问答模板" />
-              <el-option label="多轮对话模板" value="多轮对话模板" />
-              <el-option label="知识抽取模板" value="知识抽取模板" />
-            </el-select>
-          </div>
-          <div class="form-field form-field--narrow">
-            <label class="field-label">批次大小</label>
-            <el-input v-model="configBatch" />
+            <el-input
+              v-else
+              v-model="configValues[field.prop]"
+              :placeholder="field.placeholder"
+            />
           </div>
         </div>
 
@@ -560,12 +603,6 @@ function formatTime(dateStr: string): string {
   height: 6px;
   border-radius: 50%;
   background: var(--success);
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
 }
 
 .cell-name {

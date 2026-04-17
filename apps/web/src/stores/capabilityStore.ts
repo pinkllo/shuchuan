@@ -65,20 +65,34 @@ export const useCapabilityStore = defineStore("capability", () => {
       adapter: "待接入",
       status: "未来接入",
       tone: "info",
-      description: "一期仅展示占位信息，不纳入真实主链路。",
-      configurable: false,
-      selectable: false
+      description: "可自定义拆分粒度的文本切分工具。",
+      configurable: true,
+      selectable: true,
+      schema: [
+        {
+          prop: "chunkSize",
+          label: "单块包含字数 (Token 限制)",
+          type: "input",
+          default: "1000"
+        },
+        {
+          prop: "overlap",
+          label: "段落重叠(免断句)",
+          type: "input",
+          default: "150"
+        }
+      ]
     },
     {
       id: "grammar_fix",
       name: "病句修改",
-      owner: "后续外部能力",
-      adapter: "待接入",
-      status: "未来接入",
-      tone: "info",
-      description: "一期仅展示占位信息，不纳入真实主链路。",
+      owner: "辅助处理集群",
+      adapter: "轻量任务",
+      status: "在线",
+      tone: "good",
+      description: "本任务无需任何额外参数，直接提交即可。",
       configurable: false,
-      selectable: false
+      selectable: true
     }
   ]);
 
