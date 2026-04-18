@@ -43,17 +43,17 @@ export const navItems: NavItem[] = [
     name: "catalogs",
     path: "/catalogs",
     label: "数据目录",
-    hint: "供给侧信息",
+    hint: "供给侧信息与浏览",
     icon: markRaw(Files),
-    roles: ["provider"]
+    roles: ["provider", "aggregator"]
   },
   {
     name: "demands",
     path: "/demands",
     label: "需求协同",
-    hint: "审批与交付",
+    hint: "申请与审批",
     icon: markRaw(SwitchButton),
-    roles: ["provider"]
+    roles: ["provider", "aggregator"]
   },
   {
     name: "deliveries",

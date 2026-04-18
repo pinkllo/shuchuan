@@ -313,12 +313,12 @@ function formatTime(dateStr: string): string {
             <el-option
               v-for="c in catalogs"
               :key="c.id"
-              :label="`${c.name} (${c.version})`"
+              :label="`${c.name}`"
               :value="c.id"
             >
               <div class="option-row">
                 <span>{{ c.name }}</span>
-                <span class="option-meta">{{ c.version }} · {{ c.assetCount ?? 0 }}个文件</span>
+                <span class="option-meta">{{ c.assetCount ?? 0 }}个文件</span>
               </div>
             </el-option>
           </el-select>

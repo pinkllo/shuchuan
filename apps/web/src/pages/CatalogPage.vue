@@ -30,7 +30,7 @@ const previewAsset = ref<any>(null);
 
 const createForm = reactive({
   name: "", dataType: "text", granularity: "document", version: "1.0",
-  fieldsDescription: "", scaleDescription: "", uploadMethod: "batch",
+  fieldsDescription: "", scaleDescription: "", uploadMethod: "平台上传",
   sensitivityLevel: "internal", description: "", files: [] as File[]
 });
 
@@ -80,7 +80,7 @@ function startCreating() {
   creating.value = true;
   Object.assign(createForm, {
     name: "", dataType: "text", granularity: "document", version: "1.0",
-    fieldsDescription: "", scaleDescription: "", uploadMethod: "batch",
+    fieldsDescription: "", scaleDescription: "", uploadMethod: "平台上传",
     sensitivityLevel: "internal", description: "", files: []
   });
 }
@@ -158,7 +158,7 @@ onMounted(loadPage);
           <el-button v-if="permission.isProvider.value" type="primary" size="small" @click="startCreating">+ 新建</el-button>
         </div>
         <ItemCard v-for="c in filteredCatalogs" :key="c.id" :selected="selectedId === c.id" @click="selectItem(c.id)">
-          <div class="item-title">{{ c.name }} <span class="item-version">{{ c.version }}</span></div>
+          <div class="item-title">{{ c.name }}</div>
           <div class="item-meta">
             <StatusBadge :label="catalogStatusLabels[c.status]" :tone="toneBadge[c.status]" />
             <span>{{ c.assetCount ?? 0 }} 个文件</span>
@@ -171,27 +171,11 @@ onMounted(loadPage);
         <!-- Creating Mode -->
         <InlineForm v-if="creating" title="新建数据目录" :loading="submitting" @submit="handleCreate" @cancel="cancelCreating">
           <el-form label-position="top">
-            <el-form-item label="目录名称"><el-input v-model="createForm.name" /></el-form-item>
             <div class="form-row">
+              <el-form-item label="目录名称"><el-input v-model="createForm.name" /></el-form-item>
               <el-form-item label="数据类型"><el-input v-model="createForm.dataType" /></el-form-item>
-              <el-form-item label="版本"><el-input v-model="createForm.version" /></el-form-item>
-            </div>
-            <div class="form-row">
-              <el-form-item label="粒度"><el-input v-model="createForm.granularity" /></el-form-item>
-              <el-form-item label="敏感级别">
-                <el-select v-model="createForm.sensitivityLevel"><el-option label="公开" value="public" /><el-option label="内部" value="internal" /><el-option label="敏感" value="sensitive" /></el-select>
-              </el-form-item>
             </div>
             <el-form-item label="字段说明"><el-input v-model="createForm.fieldsDescription" type="textarea" :rows="2" /></el-form-item>
-            <el-form-item label="上传方式">
-              <el-select v-model="createForm.uploadMethod">
-                <el-option label="平台上传" value="平台上传" />
-                <el-option label="接口推送" value="接口推送" />
-                <el-option label="数据库同步" value="数据库同步" />
-                <el-option label="离线拷贝" value="离线拷贝" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="规模描述"><el-input v-model="createForm.scaleDescription" /></el-form-item>
             <el-form-item label="描述"><el-input v-model="createForm.description" type="textarea" :rows="2" /></el-form-item>
             <el-form-item label="初始文件">
               <label class="file-upload-area">
@@ -207,7 +191,7 @@ onMounted(loadPage);
           <template #header>
             <div class="detail-head">
               <div>
-                <h3 class="detail-title">{{ selected.name }} <span class="item-version">{{ selected.version }}</span></h3>
+                <h3 class="detail-title">{{ selected.name }}</h3>
                 <StatusBadge :label="catalogStatusLabels[selected.status]" :tone="toneBadge[selected.status]" />
               </div>
               <div v-if="permission.isProvider.value" class="detail-actions">
@@ -219,11 +203,8 @@ onMounted(loadPage);
 
           <div class="detail-section">
             <h5 class="section-title">基本信息</h5>
-            <div class="info-grid">
+            <div class="info-grid" style="grid-template-columns: 1fr;">
               <div><label>数据类型</label><span>{{ selected.dataType }}</span></div>
-              <div><label>粒度</label><span>{{ selected.granularity }}</span></div>
-              <div><label>敏感级别</label><span>{{ selected.sensitivityLevel }}</span></div>
-              <div><label>上传方式</label><span>{{ selected.uploadMethod }}</span></div>
             </div>
             <p v-if="selected.description" class="detail-desc">{{ selected.description }}</p>
           </div>

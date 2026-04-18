@@ -47,9 +47,9 @@ const router = createRouter({
       component: () => import("@/pages/CatalogPage.vue"),
       meta: {
         auth: true,
-        roles: ["provider"],
+        roles: ["provider", "aggregator"],
         title: "数据目录",
-        summary: "提供者管理目录。"
+        summary: "提供者管理目录，需求方浏览可用数据。"
       }
     },
     {
@@ -58,9 +58,9 @@ const router = createRouter({
       component: () => import("@/pages/DemandPage.vue"),
       meta: {
         auth: true,
-        roles: ["provider"],
+        roles: ["provider", "aggregator"],
         title: "需求协同",
-        summary: "提供者审批需求和上传数据。"
+        summary: "提供者审批需求，需求方管理申请。"
       }
     },
     {
